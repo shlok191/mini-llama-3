@@ -11,16 +11,18 @@ class MiniLlamaTokenizer:
     If time permits, I will use concurrency to parallelize the process of counting adjacent tokens as well!
     """
     
-    def __init__(self, text_corpus: List[str], iterations: int):
+    def __init__(self, text_corpus: Optional[List[str]], iterations: int, vocab_size: int = 12400):
         """ Initializes and trains the tokenizer on the given texts for [iterations] iterations
 
         Args:
-            text_corpus (List[str]): A list of texts
+            text_corpus (Optional[List[str]]): A list of texts or None (None in case of loading tokenizer)
             iterations (int): The number of times to merge the most frequently adjacent tokens
+            vocab_size (int): The total amount of tokens storable in the memory
         """
 
         # Storing all of the important variables
         self.iterations = iterations
+        self.vocab_size = vocab_size
         
         # Converts tokens to strings and vice versa!
         self.string_to_tokens: Dict[str, int] = dict()
@@ -30,32 +32,33 @@ class MiniLlamaTokenizer:
         self.word_freqs: Dict[str, int] = defaultdict(int)
         
         # Defining some helpful special tokens!
-        self.special_tokens = set(["<padding>", "<begin_of_sentence>", "<end_of_sentence>",
-            "<unknown>", "<assistant>", "<human>", "</w>"])
+        self.special_tokens = ["<padding>", "<begin_of_sentence>", "<end_of_sentence>",
+            "<unknown>", "<assistant>", "<human>", "</w>"]
 
         # Initializing the vocabulary with all of basic english characters + </w> special token
         for key in self.special_tokens:
             
             self.string_to_tokens[key] = len(self.string_to_tokens)
             self.tokens_to_string[len(self.tokens_to_string)] = key
-            
-        for text in text_corpus:
-            
-            # Splitting the text into individual letter
-            words = text.lower().strip().split()
-            
-            for word in words:
+        
+        if text_corpus is not None:
+            for text in text_corpus:
                 
-                if word + "</w>" in self.string_to_tokens:
-                    continue
+                # Splitting the text into individual letter
+                words = text.lower().strip().split()
                 
-                # Adding a token to identify the end of word
-                word = word + "</w>" 
-                self.word_freqs[word] += 1
-                
-                self.string_to_tokens[word] = len(self.string_to_tokens)
-                self.tokens_to_string[len(self.tokens_to_string)] = word
-                
+                for word in words:
+                    
+                    if word + "</w>" in self.string_to_tokens:
+                        continue
+                    
+                    # Adding a token to identify the end of word
+                    word = word + "</w>" 
+                    self.word_freqs[word] += 1
+                    
+                    self.string_to_tokens[word] = len(self.string_to_tokens)
+                    self.tokens_to_string[len(self.tokens_to_string)] = word
+                    
     def merge_tokens(self, pair: Tuple[str, str], word_frequency: Dict[str, int]) -> Dict[str, int]:
         """Merges all of the token pairs with the highest adjacency frequency counts
 
@@ -111,6 +114,7 @@ class MiniLlamaTokenizer:
             most_freq = max(pairs.items(), key=lambda x: x[1])
             best_pair = most_freq[0]
             
+            
             # Merging the pair in our vocabulary
             word_freqs = self.merge_tokens(best_pair, word_freqs)
             self.merges[best_pair] = ''.join(best_pair)
@@ -119,9 +123,15 @@ class MiniLlamaTokenizer:
             self.string_to_tokens[''.join(best_pair)] = len(self.tokens_to_string)
             self.tokens_to_string[len(self.tokens_to_string)] = ''.join(best_pair)
             
+            # Stopping when we reach the maximum amount of tokens allocable
+            if len(self.string_to_tokens) >= self.vocab_size:
+            
+                print(f"Reached maximum vocabulary size: {self.vocab_size}")
+                break
+        
             if (i + 1) % 1000 == 0:
                 print(f"Completed {i + 1} merges. Vocabulary size: {len(self.string_to_tokens)}")
-    
+
     def encode(self, text: str) -> List[int]:
         """Converts the given text into a series of token IDs
 
@@ -192,25 +202,46 @@ class MiniLlamaTokenizer:
         return text
     
     def save(self, path: str) -> None:
-        """Save tokenizer vocabulary and merges."""
+        """Save the tokenizer properties in a JSON file
+
+        Args:
+            path (str): The path where to store the JSON
+        """
+        
+        # Defining a dictionary to store the associated values
         save_dict = {
-            'vocab': list(self.string_to_tokens),
-            'merges': {' '.join(k): v for k, v in self.merges.items()},
+            'string_to_tokens': list(self.string_to_tokens.keys()), # Storing the string
+            'tokens_to_string': list(self.tokens_to_string.values()), # Storing the tokens
+            'merges': {' '.join(key): value for key, value in self.merges.items()}, # Ensures mergables are space-separated strings
             'special_tokens': self.special_tokens
         }
         
+        # Storing the file in UTF-8 format to ensure broad character support
         with open(path, 'w', encoding='utf-8') as f:
-            json.dump(save_dict, f, ensure_ascii=False, indent=2)
+            json.dump(save_dict, f)
     
     @classmethod
-    def load(cls, path: str, text_corpus: Optional[List[str]] = None) -> 'MiniLlamaTokenizer':
-        """Load saved tokenizer."""
+    def load(cls, path: str) -> 'MiniLlamaTokenizer':
+        """Loads in a JSON configuration for the BPE tokenizer
+        ( Defining as a classmethod since it is used before an obj is defined! )
+
+        Args:
+            path (str): The path of the saved configuration file
+
+        Returns:
+            MiniLlamaTokenizer: The tokenizer object
+        """
+        
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
             
-        tokenizer = cls(text_corpus or [""], iterations=0)
-        tokenizer.vocab = set(data['vocab'])
-        tokenizer.merges = {tuple(k.split()): v for k, v in data['merges'].items()}
+        tokenizer = MiniLlamaTokenizer(None, iterations=0)
+        
+        # Saving the respective dictionaries
+        tokenizer.string_to_tokens = {value: token for token, value in enumerate(data['string_to_tokens'])}
+        tokenizer.tokens_to_string = {token: value for token, value in enumerate(data['tokens_to_string'])}
+        
+        tokenizer.merges = {tuple(key.split()): value for key, value in data['merges'].items()}
         tokenizer.special_tokens = data['special_tokens']
         
         return tokenizer
@@ -238,10 +269,19 @@ class MiniLlamaTokenizer:
         
         return tokenizer
 
+
 if __name__ == "__main__":
     
     tokenizer = MiniLlamaTokenizer.example_usage()
     
-    # tokenizer.save("tokenizer.json")
-    # tokenizer = MiniLlamaTokenizer.load("tokenizer.json")
-    print(tokenizer.decode(tokenizer.encode("Why is the rum gone?")))
+    print("-" * 50)
+    print("Beginning saving and loading: \n")
+    
+    tokenizer.save("tokenizer.json")
+    tokenizer = MiniLlamaTokenizer.load(path="tokenizer.json")
+    
+    encoded_tokens = tokenizer.encode("Why is the rum gone?")
+    print(f"Encoded tokens: {encoded_tokens}")
+    
+    decoded_string = tokenizer.decode(encoded_tokens)
+    print(f"Decoded string: {decoded_string}")
