@@ -34,6 +34,8 @@ class Embedding(nn.Module):
             init_method (str, optional): The way with which to initialize the layer. Defaults to "xavier".
         """
         
+        super().__init__()
+
         # Storing the passed variables
         self.num_embeddings = num_embeddings
         self.embed_dims = embed_dims
