@@ -14,12 +14,12 @@ if not os.path.exists(cuda_home):
 
 setup(
     # Basic package information
-    name="cuda_kernels",
+    name="cuda_embedding",
     version="0.1.0",
     author="Shlok Sabarwal",
     author_email="ssabarwal@wisc.edu",
-    description="Custom CUDA kernels for a Mini LLama Model!",
-    long_description="A fast CUDA implementation for the Mini LLama Model with aim of having 80% speed compared to CuBLAS",
+    description="Custom CUDA Embedding Implementation",
+    long_description="A fast CUDA implementation of embedding layer with custom forward and backward passes",
     
     # Package configuration
     packages=find_packages(),
@@ -27,12 +27,10 @@ setup(
     # Extension module configuration
     ext_modules=[
         CUDAExtension(
-            name='cuda_kernels',  
+            name='cuda_embedding',  # This will be the name you import
             sources=[
-#                './embeddings/embeddings.cpp',     
-#                './embeddings/embedding.cu',       
-                './linear/bindings.cpp',     
-                './linear/linear.cu',       
+                'bindings.cpp',     # PyBind11 bindings
+                'embedding.cu'      # CUDA implementation
             ],
             
             # Include directories
@@ -45,25 +43,26 @@ setup(
             extra_compile_args={
                 'cxx': [
                     '-O3',                  # High optimization level
-                    '-std=c++17',          # C++ standard
+                    '-std=c++14',          # C++ standard
+                    '-g',                   # Include debug symbols
                     '-Wno-deprecated',      # Suppress deprecation warnings
                     '-fopenmp'             # Enable OpenMP support
                 ],
                 'nvcc': [
-                    '-O3',                         # High optimization level
-                    '--use_fast_math',             # Use fast math operations
-                    '-std=c++17',                  # C++ standard
-                    '--ptxas-options=-v',          # Verbose PTXAS output
-                    '-lineinfo',                   # Include line information
+                    '-O3',                  # High optimization level
+                    '--use_fast_math',      # Use fast math operations
+                    '-std=c++14',          # C++ standard
+                    '-arch=sm_70',         # Minimum compute capability
+                    '--ptxas-options=-v',  # Verbose PTXAS output
+                    '--compiler-options',   
+                    '-fPIC',               # Position independent code
                     '--expt-relaxed-constexpr',
                     '--expt-extended-lambda',
-                    '-Xcompiler', '-fPIC',         # Pass -fPIC to the host compiler
-                    '-gencode=arch=compute_70,code=sm_70',
-                    '-gencode=arch=compute_75,code=sm_75',
-                    '-gencode=arch=compute_80,code=sm_80',
-                    '-gencode=arch=compute_86,code=sm_86'
-                ],
-
+                    '-gencode=arch=compute_70,code=sm_70',  # For Volta
+                    '-gencode=arch=compute_75,code=sm_75',  # For Turing
+                    '-gencode=arch=compute_80,code=sm_80',  # For Ampere
+                    '-gencode=arch=compute_86,code=sm_86'   # For Ampere
+                ]
             }
         )
     ],
@@ -81,7 +80,7 @@ setup(
     
     # Additional package data
     package_data={
-        'cuda_kernels': ['*.h']
+        'cuda_embedding': ['*.h']
     },
     
     # Python version requirement

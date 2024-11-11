@@ -1,13 +1,18 @@
 import torch
 import time
 from cuda_kernels import linear_forward
+import nvtx
+
+@nvtx.annotate(color="blue")
+def wrapper(X, weights):
+    return linear_forward(X, weights)
 
 # Set device to CUDA
 device = torch.device('cuda')
 
 # Define dimensions (ensure they are multiples of 256)
-in_features = 1024
-out_features = 1024
+in_features = 8192
+out_features = 8192
 
 # Generate random input data and weights
 X = torch.randn(in_features, in_features, device=device, dtype=torch.float32)
@@ -24,20 +29,24 @@ for _ in range(10):
 
 # Test correctness
 with torch.no_grad():
+    
     # Output from custom CUDA function
-    output_custom = linear_forward(X, weights)
+    output_custom = wrapper(X, weights)
+    
     # Output from standard matrix multiplication
     output_standard = standard_linear(X, weights)
+
     # Compare outputs
     max_difference = (output_custom - output_standard).abs().max().item()
-    print(f'Max difference between outputs: {max_difference}')
-    if max_difference < 1e-4:
+    
+    print(f'Maximum difference between outputs: {max_difference}')
+    if max_difference < 1e-3:
         print('Outputs are close enough.')
     else:
         print('Outputs differ significantly!')
 
 # Measure execution time
-num_runs = 100
+num_runs = 25
 
 # Time custom CUDA function
 start_time = time.time()

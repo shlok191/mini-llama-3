@@ -7,10 +7,4 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         "CUDA Linear Forward",
         py::arg("X"),
         py::arg("weights"));
-    
-    m.def("linear_backward", &linear_backward_cuda,
-        "CUDA Linear Backward",
-        py::arg("grad_output"),
-        py::arg("X"),
-        py::arg("weights"));
 }

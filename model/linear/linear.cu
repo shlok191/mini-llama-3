@@ -2,14 +2,18 @@
 #include <cuda_runtime.h>
 #include <torch/extension.h>
 #include <vector>
+#include <stdio.h>
 
 // Constants for block dimensions
 // Thus, each block stores 64 x 64 x 2 float32 values = 32 KiB of shared memory, which works for A100 GPUs!
 
 // For this project, I am using GPUs from Vast.ai for super cheap :)
-#define BLOCK_SIZE 32
+#define BLOCK_SIZE 16
 #define THREAD_SIZE 4
-#define TILE_SIZE 128
+#define TILE_SIZE 64
+
+#define CHECK_CUDA(x) TORCH_CHECK(x.device().is_cuda(), #x " must be a CUDA tensor")
+#define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
 
 // Forward declaration for our CUDA kernels
 __global__ void linear_forward_kernel(
@@ -30,7 +34,7 @@ __global__ void linear_forward_kernel(
     // Defining shared memory for the block
     __shared__ float X_shared[TILE_SIZE][TILE_SIZE];
     __shared__ float weights_shared[TILE_SIZE][TILE_SIZE];
-    
+
     // Calculating the block position in the broader output matrix
     const int block_row = blockIdx.y * TILE_SIZE;
     const int block_col = blockIdx.x * TILE_SIZE;
@@ -40,11 +44,14 @@ __global__ void linear_forward_kernel(
 
     const int num_tiles = int(in_features / TILE_SIZE);
 
+    #pragma unroll
     for (int tile_index = 0; tile_index < num_tiles; tile_index++) {
 
         // First, we load in our Shared Memory with strides
+        #pragma unroll
         for (int row_offset = 0; row_offset < TILE_SIZE; row_offset += BLOCK_SIZE) {
             
+            #pragma unroll
             for (int col_offset = 0; col_offset < TILE_SIZE; col_offset += BLOCK_SIZE) {
                 
                 // Defining indices for the shared positions and the global positions
@@ -57,7 +64,7 @@ __global__ void linear_forward_kernel(
                 X_shared[shared_row][shared_col] = X[(global_row * in_features) + global_col];
 
                 // Reusing variables for the weights
-                global_row = (tileIdx * TILE_SIZE) + shared_row;
+                global_row = (tile_index * TILE_SIZE) + shared_row;
                 global_col = block_col + shared_col;
 
                 weights_shared[shared_row][shared_col] = weights[(global_row * out_features) + global_col];
@@ -68,80 +75,38 @@ __global__ void linear_forward_kernel(
         }
 
         // Finally, we compute the dot-product for the memory currently loaded in
-        for (int i = 0; i < THREAD_SIZE; i++) {
-            for (int j = 0; j < THREAD_SIZE; j++) {
-                values[i][j] += X_shared[threadIdx.y + i * BLOCK_SIZE][k] * weights_shared[k][threadIdx.x + j * BLOCK_SIZE];
+        #pragma unroll
+        for (int k = 0; k < TILE_SIZE; k++){
+            
+            #pragma unroll
+            for (int i = 0; i < THREAD_SIZE; i++) {
+
+                #pragma unroll
+                for (int j = 0; j < THREAD_SIZE; j++) {
+                    values[i][j] += X_shared[threadIdx.y + i * BLOCK_SIZE][k] * weights_shared[k][threadIdx.x + j * BLOCK_SIZE];
+                }
             }
         }
-
         // Synchronize before loading the next tile
         __syncthreads();
     }
 
     // Write the final results to the output matrix
+    #pragma unroll
     for (int i = 0; i < THREAD_SIZE; i++) {
-        int outputRow = blockRow + threadRow + i * BLOCK_SIZE;
+        int outputRow = block_row + threadIdx.y + i * BLOCK_SIZE;
+
+        #pragma unroll
         for (int j = 0; j < THREAD_SIZE; j++) {
-            int outputCol = blockCol + threadCol + j * BLOCK_SIZE;
+            int outputCol = block_col + threadIdx.x + j * BLOCK_SIZE;
             output[outputRow * out_features + outputCol] = values[i][j];
         }
     }
 }
 
 
-// Backward pass kernel for weights
-__global__ void linear_backward_kernel_weights(
-    const float* __restrict__ grad_output,
-    const float* __restrict__ X,
-    float* __restrict__ grad_weights,
-    const int batch_size,
-    const int in_features,
-    const int out_features) {
-    
-    // Shared memory for tiling
-    __shared__ float grad_shared[TILE_SIZE][TILE_SIZE];
-    __shared__ float X_shared[TILE_SIZE][TILE_SIZE];
-    
-    const int row = blockIdx.y * blockDim.y + threadIdx.y;
-    const int col = blockIdx.x * blockDim.x + threadIdx.x;
-    
-    float acc = 0.0f;
-    
-    for (int t = 0; t < (batch_size + TILE_SIZE - 1) / TILE_SIZE; ++t) {
-        if (threadIdx.y < TILE_SIZE && threadIdx.x < TILE_SIZE) {
-            const int g_row = t * TILE_SIZE + threadIdx.y;
-            const int g_col = col;
-            const int x_row = t * TILE_SIZE + threadIdx.y;
-            const int x_col = row;
-            
-            if (g_row < batch_size && g_col < out_features) {
-                grad_shared[threadIdx.y][threadIdx.x] = grad_output[g_row * out_features + g_col];
-            } else {
-                grad_shared[threadIdx.y][threadIdx.x] = 0.0f;
-            }
-            
-            if (x_row < batch_size && x_col < in_features) {
-                X_shared[threadIdx.y][threadIdx.x] = X[x_row * in_features + x_col];
-            } else {
-                X_shared[threadIdx.y][threadIdx.x] = 0.0f;
-            }
-        }
-        __syncthreads();
-        
-        if (row < in_features && col < out_features) {
-            for (int k = 0; k < TILE_SIZE; ++k) {
-                acc += X_shared[k][threadIdx.y] * grad_shared[k][threadIdx.x];
-            }
-        }
-        __syncthreads();
-    }
-    
-    if (row < in_features && col < out_features) {
-        grad_weights[row * out_features + col] = acc;
-    }
-}
-
 // C++ wrapper for the forward pass
+
 torch::Tensor linear_forward_cuda(
     const torch::Tensor& X,
     const torch::Tensor& weights) {
@@ -173,42 +138,4 @@ torch::Tensor linear_forward_cuda(
     
     // Return the output tensor
     return output;
-}
-
-// C++ wrapper for the backward pass
-std::vector<torch::Tensor> linear_backward_cuda(
-    const torch::Tensor& grad_output,
-    const torch::Tensor& X,
-    const torch::Tensor& weights) {
-    
-    CHECK_CUDA(grad_output);
-    CHECK_CUDA(X);
-    CHECK_CUDA(weights);
-    CHECK_CONTIGUOUS(grad_output);
-    CHECK_CONTIGUOUS(X);
-    CHECK_CONTIGUOUS(weights);
-    
-    const int batch_size = X.size(0);
-    const int in_features = X.size(1);
-    const int out_features = weights.size(1);
-    
-    auto grad_weights = torch::empty_like(weights);
-    
-    // Launch kernel for weights gradient
-    const dim3 threads_weights(BLOCK_SIZE, BLOCK_SIZE);
-    const dim3 blocks_weights(
-        (out_features + BLOCK_SIZE - 1) / BLOCK_SIZE,
-        (in_features + BLOCK_SIZE - 1) / BLOCK_SIZE
-    );
-    
-    linear_backward_kernel_weights<<<blocks_weights, threads_weights>>>(
-        grad_output.data_ptr<float>(),
-        X.data_ptr<float>(),
-        grad_weights.data_ptr<float>(),
-        batch_size,
-        in_features,
-        out_features
-    );
-    
-    return {grad_weights};
 }
