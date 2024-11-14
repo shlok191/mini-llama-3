@@ -11,8 +11,8 @@ def wrapper(X, weights):
 device = torch.device('cuda')
 
 # Define dimensions (ensure they are multiples of 256)
-in_features = 8192
-out_features = 8192
+in_features = 4096
+out_features = 4096
 
 # Generate random input data and weights
 X = torch.randn(in_features, in_features, device=device, dtype=torch.float32)
