@@ -104,6 +104,207 @@ __global__ void linear_forward_kernel(
     }
 }
 
+// Kernel for computing gradient with respect to input (dL/dX)
+__global__ void linear_backward_input_kernel(
+    const float* __restrict__ grad_output,
+    const float* __restrict__ weights,
+    float* __restrict__ grad_input,
+    const int in_features,
+    const int out_features) {
+    
+    __shared__ float grad_shared[TILE_SIZE][TILE_SIZE];
+    __shared__ float weights_shared[TILE_SIZE][TILE_SIZE];
+
+    const int block_row = blockIdx.y * TILE_SIZE;
+    const int block_col = blockIdx.x * TILE_SIZE;
+
+    float values[THREAD_SIZE][THREAD_SIZE] = {0};
+
+    const int num_tiles = (out_features + TILE_SIZE - 1) / TILE_SIZE;
+
+    for (int tile_index = 0; tile_index < num_tiles; tile_index++) {
+        
+        // Load grad_output and weights into shared memory
+        for (int row_offset = 0; row_offset < TILE_SIZE; row_offset += BLOCK_SIZE) {
+            int shared_row = row_offset + threadIdx.y;
+            
+            int global_row_grad = block_row + shared_row;
+            int global_row_W = tile_index * TILE_SIZE + shared_row;
+
+            int shared_col = threadIdx.x * VECTOR_WIDTH;
+            int global_col_grad = tile_index * TILE_SIZE + shared_col;
+            int global_col_W = block_col + shared_col;
+
+            // Use vectorized loading for better memory throughput
+            float4* grad_shared_ptr = reinterpret_cast<float4*>(&grad_shared[shared_row][shared_col]);
+            float4* weights_shared_ptr = reinterpret_cast<float4*>(&weights_shared[shared_row][shared_col]);
+
+            const float4* grad_global_ptr = reinterpret_cast<const float4*>(&grad_output[global_row_grad * out_features + global_col_grad]);
+            const float4* weights_global_ptr = reinterpret_cast<const float4*>(&weights[global_row_W * in_features + global_col_W]);
+
+            *grad_shared_ptr = *grad_global_ptr;
+            *weights_shared_ptr = *weights_global_ptr;
+        }
+
+        __syncthreads();
+
+        // Compute partial results
+        #pragma unroll
+        for (int k = 0; k < TILE_SIZE; k++) {
+
+            #pragma unroll
+            for (int i = 0; i < THREAD_SIZE; i++) {
+
+                const float grad_val = grad_shared[threadIdx.y + i * BLOCK_SIZE][k];
+                
+                #pragma unroll
+                for (int j = 0; j < THREAD_SIZE; j++) {
+                    values[i][j] = __fmaf_rn(grad_val, weights_shared[k][threadIdx.x + j * BLOCK_SIZE], values[i][j]);
+                }
+            }
+        }
+
+        __syncthreads();
+    }
+
+    // Write results
+    #pragma unroll
+    for (int i = 0; i < THREAD_SIZE; i++) {
+        int output_row = block_row + threadIdx.y + i * BLOCK_SIZE;
+        if (output_row < in_features) {
+            #pragma unroll
+            for (int j = 0; j < THREAD_SIZE; j++) {
+                int output_col = block_col + threadIdx.x + j * BLOCK_SIZE;
+                if (output_col < in_features) {
+                    grad_input[output_row * in_features + output_col] = values[i][j];
+                }
+            }
+        }
+    }
+}
+
+// Kernel for computing gradient with respect to weights (dL/dW)
+__global__ void linear_backward_weight_kernel(
+    const float* __restrict__ grad_output,
+    const float* __restrict__ input,
+    float* __restrict__ grad_weights,
+    const int in_features,
+    const int out_features) {
+    
+    __shared__ float grad_shared[TILE_SIZE][TILE_SIZE];
+    __shared__ float input_shared[TILE_SIZE][TILE_SIZE];
+
+    const int block_row = blockIdx.y * TILE_SIZE;
+    const int block_col = blockIdx.x * TILE_SIZE;
+
+    float values[THREAD_SIZE][THREAD_SIZE] = {0};
+
+    const int num_tiles = (in_features + TILE_SIZE - 1) / TILE_SIZE;
+
+    for (int tile_index = 0; tile_index < num_tiles; tile_index++) {
+        // Load grad_output and input into shared memory
+        for (int row_offset = 0; row_offset < TILE_SIZE; row_offset += BLOCK_SIZE) {
+            int shared_row = row_offset + threadIdx.y;
+
+            int global_row_input = tile_index * TILE_SIZE + shared_row;
+            int global_row_grad = block_row + shared_row;
+
+            int shared_col = threadIdx.x * VECTOR_WIDTH;
+            int global_col_input = block_col + shared_col;
+            int global_col_grad = block_col + shared_col;
+
+            float4* input_shared_ptr = reinterpret_cast<float4*>(&input_shared[shared_row][shared_col]);
+            float4* grad_shared_ptr = reinterpret_cast<float4*>(&grad_shared[shared_row][shared_col]);
+
+            const float4* input_global_ptr = reinterpret_cast<const float4*>(&input[global_row_input * in_features + global_col_input]);
+            const float4* grad_global_ptr = reinterpret_cast<const float4*>(&grad_output[global_row_grad * out_features + global_col_grad]);
+
+            *input_shared_ptr = *input_global_ptr;
+            *grad_shared_ptr = *grad_global_ptr;
+        }
+
+        __syncthreads();
+
+        // Compute partial results
+        #pragma unroll
+        for (int k = 0; k < TILE_SIZE; k++) {
+            #pragma unroll
+            for (int i = 0; i < THREAD_SIZE; i++) {
+                const float input_val = input_shared[k][threadIdx.y + i * BLOCK_SIZE];
+                #pragma unroll
+                for (int j = 0; j < THREAD_SIZE; j++) {
+                    values[i][j] = __fmaf_rn(input_val, grad_shared[k][threadIdx.x + j * BLOCK_SIZE], values[i][j]);
+                }
+            }
+        }
+
+        __syncthreads();
+    }
+
+    // Write results
+    #pragma unroll
+    for (int i = 0; i < THREAD_SIZE; i++) {
+        int output_row = block_row + threadIdx.y + i * BLOCK_SIZE;
+        if (output_row < in_features) {
+            #pragma unroll
+            for (int j = 0; j < THREAD_SIZE; j++) {
+                int output_col = block_col + threadIdx.x + j * BLOCK_SIZE;
+                if (output_col < out_features) {
+                    grad_weights[output_row * out_features + output_col] = values[i][j];
+                }
+            }
+        }
+    }
+}
+
+// C++ wrapper for backward pass
+torch::Tensor linear_backward_cuda(
+    const torch::Tensor& grad_output,
+    const torch::Tensor& input,
+    const torch::Tensor& weights) {
+    
+    CHECK_CUDA(grad_output);
+    CHECK_CUDA(input);
+    CHECK_CUDA(weights);
+    CHECK_CONTIGUOUS(grad_output);
+    CHECK_CONTIGUOUS(input);
+    CHECK_CONTIGUOUS(weights);
+    
+    const int in_features = input.size(0);
+    const int out_features = weights.size(1);
+    
+    // Create output tensors
+    auto grad_input = torch::empty({in_features, in_features}, input.options());
+    auto grad_weights = torch::empty({in_features, out_features}, weights.options());
+    
+    // Launch kernels
+    dim3 threads(BLOCK_SIZE, BLOCK_SIZE);
+    
+    // For grad_input
+    dim3 blocks_input(in_features / TILE_SIZE, in_features / TILE_SIZE);
+    
+    linear_backward_input_kernel<<<blocks_input, threads>>>(
+        grad_output.data_ptr<float>(),
+        weights.data_ptr<float>(),
+        grad_input.data_ptr<float>(),
+        in_features,
+        out_features
+    );
+    
+    // For grad_weights
+    dim3 blocks_weight(out_features / TILE_SIZE, in_features / TILE_SIZE);
+    
+    linear_backward_weight_kernel<<<blocks_weight, threads>>>(
+        grad_output.data_ptr<float>(),
+        input.data_ptr<float>(),
+        grad_weights.data_ptr<float>(),
+        in_features,
+        out_features
+    );
+    
+    return {grad_input, grad_weights};
+}
+
 // C++ wrapper for the forward pass
 torch::Tensor linear_forward_cuda(
     const torch::Tensor& X,

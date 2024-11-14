@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.autograd import Function
-
+from cuda_kernels import linear_forward, linear_backward
 
 class FunctionalLinear(Function):
     
@@ -10,14 +10,14 @@ class FunctionalLinear(Function):
         
         ctx.save_for_backward(X, bias, weights)
         
-        output = llama_kernels.linear(weights, bias, X)
+        output = linear_forward(weights, bias, X)
         return output
 
     @staticmethod
     def backward(ctx, gradient_output):
         
         X, bias, weights = ctx.saved_tensors
-        grad_weight = llama_kernels.linear_backward(gradient_output, weights, bias, X)[0]
+        grad_weight = linear_backward(gradient_output, weights, bias, X)[0]
         
         return None, grad_weight, None
 

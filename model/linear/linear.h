@@ -5,3 +5,8 @@
 torch::Tensor linear_forward_cuda(
     const torch::Tensor& X,
     const torch::Tensor& weights);
+
+torch::Tensor linear_backward_cuda(
+    const torch::Tensor& grad_output,
+    const torch::Tensor& input,
+    const torch::Tensor& weights);
