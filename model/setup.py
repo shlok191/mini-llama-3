@@ -29,9 +29,8 @@ setup(
         CUDAExtension(
             name='cuda_kernels',  
             sources=[
-#                './embeddings/embeddings.cpp',     
-#                './embeddings/embedding.cu',       
-                './linear/bindings.cpp',     
+                './bindings.cpp',     
+                './embedding/embedding.cu',           
                 './linear/linear.cu',       
             ],
             

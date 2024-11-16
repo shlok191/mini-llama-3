@@ -8,18 +8,10 @@
 #define BLOCK_SIZE 16
 #define TILE_SIZE 64
 #define THREAD_SIZE 4 // Loading in 128 bytes per vectorized loading operation
-#define VECTOR_WIDTH 4  
+#define VECTOR_WIDTH 4 // The chunk in which we are loading in values (here, 4 values per mem. operation)
 
 #define CHECK_CUDA(x) TORCH_CHECK(x.device().is_cuda(), #x " must be a CUDA tensor")
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
-
-// Forward declaration for our CUDA kernels
-__global__ void linear_forward_kernel(
-    const float* __restrict__ X,
-    const float* __restrict__ weights,
-    float* __restrict__ output,
-    const int in_features,
-    const int out_features);
 
 // Forward pass kernel implementation
 __global__ void linear_forward_kernel(
@@ -46,10 +38,10 @@ __global__ void linear_forward_kernel(
 
         // Load data into shared memory
         for (int row_offset = 0; row_offset < TILE_SIZE; row_offset += BLOCK_SIZE) {
+            
             int shared_row = row_offset + threadIdx.y;
-
-            int global_row_X = block_row + shared_row;
-            int global_row_W = tile_index * TILE_SIZE + shared_row;
+            int global_row_X = block_row + shared_row; // global row for the input
+            int global_row_W = tile_index * TILE_SIZE + shared_row; // global row for the weights
 
             int shared_col = threadIdx.x * VECTOR_WIDTH;
             int global_col_X = tile_index * TILE_SIZE + shared_col;
@@ -104,7 +96,8 @@ __global__ void linear_forward_kernel(
     }
 }
 
-// Kernel for computing gradient with respect to input (dL/dX)
+// Kernel for computing gradient with respect to the input (dL/dX)
+// This is useful since this will be passed back to previous layers!
 __global__ void linear_backward_input_kernel(
     const float* __restrict__ grad_output,
     const float* __restrict__ weights,
@@ -112,24 +105,27 @@ __global__ void linear_backward_input_kernel(
     const int in_features,
     const int out_features) {
     
+    // Like the forward pass, processing gradients partially via tiling
     __shared__ float grad_shared[TILE_SIZE][TILE_SIZE];
     __shared__ float weights_shared[TILE_SIZE][TILE_SIZE];
 
+    // Finding out where we are in the grid :)
     const int block_row = blockIdx.y * TILE_SIZE;
     const int block_col = blockIdx.x * TILE_SIZE;
 
     float values[THREAD_SIZE][THREAD_SIZE] = {0};
 
-    const int num_tiles = (out_features + TILE_SIZE - 1) / TILE_SIZE;
+    // NOTE: I defined all my layers to be powers of 2^8 at least, so this will be perfectly divisible!
+    const int num_tiles = out_features / TILE_SIZE;
 
     for (int tile_index = 0; tile_index < num_tiles; tile_index++) {
         
         // Load grad_output and weights into shared memory
         for (int row_offset = 0; row_offset < TILE_SIZE; row_offset += BLOCK_SIZE) {
-            int shared_row = row_offset + threadIdx.y;
             
-            int global_row_grad = block_row + shared_row;
-            int global_row_W = tile_index * TILE_SIZE + shared_row;
+            int shared_row = row_offset + threadIdx.y; // Position inside block
+            int global_row_grad = block_row + shared_row; // global row for the gradient
+            int global_row_W = tile_index * TILE_SIZE + shared_row; // global row for the weights
 
             int shared_col = threadIdx.x * VECTOR_WIDTH;
             int global_col_grad = tile_index * TILE_SIZE + shared_col;
@@ -148,17 +144,21 @@ __global__ void linear_backward_input_kernel(
 
         __syncthreads();
 
-        // Compute partial results
+        // Computing the partial results
         #pragma unroll
         for (int k = 0; k < TILE_SIZE; k++) {
 
             #pragma unroll
             for (int i = 0; i < THREAD_SIZE; i++) {
 
+                // Fetching the gradient value
                 const float grad_val = grad_shared[threadIdx.y + i * BLOCK_SIZE][k];
                 
                 #pragma unroll
                 for (int j = 0; j < THREAD_SIZE; j++) {
+
+                    // Computes (x * y) + z as a single atomic operation :)
+                    // Helps prevent race conditions for shared memory!
                     values[i][j] = __fmaf_rn(grad_val, weights_shared[k][threadIdx.x + j * BLOCK_SIZE], values[i][j]);
                 }
             }
@@ -167,14 +167,20 @@ __global__ void linear_backward_input_kernel(
         __syncthreads();
     }
 
-    // Write results
+    // Writing the results
     #pragma unroll
     for (int i = 0; i < THREAD_SIZE; i++) {
+
         int output_row = block_row + threadIdx.y + i * BLOCK_SIZE;
+        
         if (output_row < in_features) {
+        
             #pragma unroll
             for (int j = 0; j < THREAD_SIZE; j++) {
+        
                 int output_col = block_col + threadIdx.x + j * BLOCK_SIZE;
+
+                // Moving values from the shared memory to global memory
                 if (output_col < in_features) {
                     grad_input[output_row * in_features + output_col] = values[i][j];
                 }
@@ -184,6 +190,7 @@ __global__ void linear_backward_input_kernel(
 }
 
 // Kernel for computing gradient with respect to weights (dL/dW)
+// This will actually be used to update our weights :)
 __global__ void linear_backward_weight_kernel(
     const float* __restrict__ grad_output,
     const float* __restrict__ input,
@@ -199,13 +206,14 @@ __global__ void linear_backward_weight_kernel(
 
     float values[THREAD_SIZE][THREAD_SIZE] = {0};
 
-    const int num_tiles = (in_features + TILE_SIZE - 1) / TILE_SIZE;
+    const int num_tiles = in_features / TILE_SIZE;
 
     for (int tile_index = 0; tile_index < num_tiles; tile_index++) {
-        // Load grad_output and input into shared memory
+        
+        // Loading grad_output and input into shared memory
         for (int row_offset = 0; row_offset < TILE_SIZE; row_offset += BLOCK_SIZE) {
+            
             int shared_row = row_offset + threadIdx.y;
-
             int global_row_input = tile_index * TILE_SIZE + shared_row;
             int global_row_grad = block_row + shared_row;
 
@@ -225,12 +233,15 @@ __global__ void linear_backward_weight_kernel(
 
         __syncthreads();
 
-        // Compute partial results
+        // Computing partial results
         #pragma unroll
         for (int k = 0; k < TILE_SIZE; k++) {
+
             #pragma unroll
             for (int i = 0; i < THREAD_SIZE; i++) {
+            
                 const float input_val = input_shared[k][threadIdx.y + i * BLOCK_SIZE];
+            
                 #pragma unroll
                 for (int j = 0; j < THREAD_SIZE; j++) {
                     values[i][j] = __fmaf_rn(input_val, grad_shared[k][threadIdx.x + j * BLOCK_SIZE], values[i][j]);
@@ -241,13 +252,16 @@ __global__ void linear_backward_weight_kernel(
         __syncthreads();
     }
 
-    // Write results
+    // Writing the results back into global memory
     #pragma unroll
     for (int i = 0; i < THREAD_SIZE; i++) {
+        
         int output_row = block_row + threadIdx.y + i * BLOCK_SIZE;
         if (output_row < in_features) {
+        
             #pragma unroll
             for (int j = 0; j < THREAD_SIZE; j++) {
+                
                 int output_col = block_col + threadIdx.x + j * BLOCK_SIZE;
                 if (output_col < out_features) {
                     grad_weights[output_row * out_features + output_col] = values[i][j];
@@ -257,8 +271,43 @@ __global__ void linear_backward_weight_kernel(
     }
 }
 
+// C++ wrapper for the forward pass
+torch::Tensor linear_forward_cuda(
+    const torch::Tensor& X,
+    const torch::Tensor& weights) {
+    
+    // Ensure the inputs are on CUDA and are contiguous
+    CHECK_CUDA(X);
+    CHECK_CUDA(weights);
+    CHECK_CONTIGUOUS(X);
+    CHECK_CONTIGUOUS(weights);
+    
+    const int sequence_length = X.size(0);
+    const int in_features = X.size(1);
+    const int out_features = weights.size(1);
+    
+    // Create an output tensor
+    auto output = torch::empty({sequence_length, out_features}, X.options());
+    
+    // Define thread block and grid sizes
+    dim3 threads(BLOCK_SIZE, BLOCK_SIZE);
+    dim3 blocks(out_features / TILE_SIZE, sequence_length / TILE_SIZE);
+    
+    // Launch the kernel
+    linear_forward_kernel<<<blocks, threads>>>(
+        X.data_ptr<float>(),
+        weights.data_ptr<float>(),
+        output.data_ptr<float>(),
+        in_features,
+        out_features
+    );
+    
+    // Return the output tensor
+    return output;
+}
+
 // C++ wrapper for backward pass
-torch::Tensor linear_backward_cuda(
+std::vector<torch::Tensor> linear_backward_cuda(
     const torch::Tensor& grad_output,
     const torch::Tensor& input,
     const torch::Tensor& weights) {
@@ -273,11 +322,11 @@ torch::Tensor linear_backward_cuda(
     const int in_features = input.size(0);
     const int out_features = weights.size(1);
     
-    // Create output tensors
+    // Creating output tensors
     auto grad_input = torch::empty({in_features, in_features}, input.options());
     auto grad_weights = torch::empty({in_features, out_features}, weights.options());
     
-    // Launch kernels
+    // Defining kernel shapes
     dim3 threads(BLOCK_SIZE, BLOCK_SIZE);
     
     // For grad_input
@@ -303,38 +352,4 @@ torch::Tensor linear_backward_cuda(
     );
     
     return {grad_input, grad_weights};
-}
-
-// C++ wrapper for the forward pass
-torch::Tensor linear_forward_cuda(
-    const torch::Tensor& X,
-    const torch::Tensor& weights) {
-    
-    // Ensure the inputs are on CUDA and are contiguous
-    CHECK_CUDA(X);
-    CHECK_CUDA(weights);
-    CHECK_CONTIGUOUS(X);
-    CHECK_CONTIGUOUS(weights);
-    
-    const int in_features = X.size(0);
-    const int out_features = weights.size(1);
-    
-    // Create an output tensor
-    auto output = torch::empty({in_features, out_features}, X.options());
-    
-    // Define thread block and grid sizes
-    dim3 threads(BLOCK_SIZE, BLOCK_SIZE);
-    dim3 blocks(out_features / TILE_SIZE, in_features / TILE_SIZE);
-    
-    // Launch the kernel
-    linear_forward_kernel<<<blocks, threads>>>(
-        X.data_ptr<float>(),
-        weights.data_ptr<float>(),
-        output.data_ptr<float>(),
-        in_features,
-        out_features
-    );
-    
-    // Return the output tensor
-    return output;
 }

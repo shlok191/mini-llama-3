@@ -6,72 +6,115 @@ from cuda_kernels import linear_forward, linear_backward
 class FunctionalLinear(Function):
     
     @staticmethod
-    def forward(ctx, weights: torch.Tensor, bias: torch.Tensor, X: torch.Tensor):
+    def forward(ctx, x: torch.Tensor, weights: torch.Tensor):
         
-        ctx.save_for_backward(X, bias, weights)
-        
-        output = linear_forward(weights, bias, X)
-        return output
-
-    @staticmethod
-    def backward(ctx, gradient_output):
-        
-        X, bias, weights = ctx.saved_tensors
-        grad_weight = linear_backward(gradient_output, weights, bias, X)[0]
-        
-        return None, grad_weight, None
-
-class Linear(nn.Module):
-    
-    def __init__(self, in_features: int, out_features: int, bias: bool, init_method: str, device: str):
-        """ Defining a custom Linear / Dense layer implementation with a tailored CUDA backend!
+        """Generates the output for a given set of weights and inputs, also stores the inputs and weights for backpropogation
 
         Args:
-            in_features (int): The number of incoming features
-            out_features (int): The number of values to put out per input value in the batch
-            bias (bool): Whether or not to have a bias term
-            init_method (str): The method with which to initialize the layer values
-            device (str): The device on which to store the layer
+            ctx: The context for storing variables
+            x (torch.Tensor): The input torch tensor
+            weights (torch.Tensor): The weights
+            
+        Returns:
+            torch.tensor: The output of the matrix multiplication
         """
+        
+        # Saving the tensors needed for backward pass
+        ctx.save_for_backward(x, weights)
+        
+        # Calculating the forward value :)
+        return linear_forward(x, weights)
 
+    @staticmethod
+    def backward(ctx, grad_output: torch.Tensor):
+        
+        """Calculates the gradient w.r.t weights and inputs
+
+        args:
+            ctx: The context for accessing stored variables
+            
+            grad_output (torch.Tensor): The gradient of the output of this layer -- calculated by the next 
+            layer or the loss func. if this is the final layer :)
+            
+        Returns:
+            torch.Tensor, torch.Tensor: Returns the gradient w.r.t to the inputs and the weights respectively
+        """
+        
+        # Retrieving the weights and the inputs of the layer
+        x, weights = ctx.saved_tensors
+        
+        # Getting the gradient for the inputs and the weights
+        # One is passed backwards, and one updates the weights!
+        grad_input, grad_weights = linear_backward(grad_output, x, weights)
+        
+        # Return gradients for each input in same order as forward
+        return grad_input, grad_weights
+
+class Linear(nn.Module):
+    def __init__(self, 
+                 in_features: int, 
+                 out_features: int, 
+                 init_method: str = "kaiming-he",
+                 device: str = "cuda"):
+        
+        """Custom Linear layer implementation with CUDA backend.
+        
+        Args:
+            in_features (int): Number of input features
+            out_features (int): Number of output features
+            init_method (str): Weight initialization method ("xavier", "normal", "kaiming-he")
+            device (str): Device to store the layer ("cuda" or "cpu")
+        """
+        
         super().__init__()
         
-        # Storing the class variables
+        # Storing the dimensions
         self.in_features = in_features
         self.out_features = out_features
-        self.bias = bias
-        self.device = device
         
-        # Defining the weights matrix and a custom bias parameter if requested
-        self.weights = torch.nn.Parameter(torch.empty([in_features, out_features], dtype=torch.float32), requires_grad=True)
+        # Initializing weights according to the strategy specified
+        self.weights = nn.Parameter(
+            torch.empty(in_features, out_features, 
+                       dtype=torch.float32,
+                       device=device)
+        )
         
-        if bias:
-            self.bias = nn.Parameter(torch.zeros(out_features, device=device, dtype=torch.float32))
-        
-        else:
-            self.register_parameter('bias', None)
+        self._initialize_layer(init_method)
 
-        # Initializing the linear layer
-        self._initialize_layer(method=init_method)
+    def _initialize_layer(self, method: str):
+        """Initializes the layer weights by custom strategies from popular research papers
         
-        # Moving the parameters to the requested device
-        self.weights = self.weights.to(device)
-        self.bias = self.bias.to(device)
+        Args:
+            method (str): Initialization method to use for this particular linear layer
+        """
+        
+        valid_methods = ["xavier", "normal", "kaiming-he"]
 
-    def _initialize_layer(self, method=None):
-        
-        # Checking for a valid method name!
-        assert method in ["xavier", "normal", "kaiming-he"], "Please specifiy a valid initialization method!"
-        
+        # Ensuring a valid initialization method is specified
+        assert method in valid_methods, f"Invalid initialization method. Must be one of {valid_methods}"
+            
+        # We support 3 forms of initialization!
         if method == "xavier":
             nn.init.xavier_normal_(self.weights)
-            
+ 
         elif method == "normal":
             nn.init.normal_(self.weights)
             
         else:
             nn.init.kaiming_normal_(self.weights)
-    
-    def forward(self, X):
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass of the layer
         
-        return FunctionalLinear.apply(self.weights, self.bias, X)
+        Args:
+            x (torch.Tensor): Input tensor of shape (sequence_length x input_features)
+            
+        Returns:
+            torch.Tensor: Output tensor of shape (sequence_length x output_features)
+        """
+        
+        return FunctionalLinear.apply(x, self.weights)
+
+    def extra_repr(self) -> str:
+        """String representation of layer parameters."""
+        return f"in_features={self.in_features}, out_features={self.out_features}"
