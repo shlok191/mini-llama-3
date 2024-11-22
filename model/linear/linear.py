@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 from torch.autograd import Function
-from cuda_kernels import linear_forward, linear_backward
+from cuda_kernels import linear_forward, linear_backward_weights, linear_backward_inputs
+
 
 class FunctionalLinear(Function):
     
@@ -41,14 +42,18 @@ class FunctionalLinear(Function):
         """
         
         # Retrieving the weights and the inputs of the layer
-        x, weights = ctx.saved_tensors
+        X, weights = ctx.saved_tensors
+        
+        X = X.T.contiguous()
+        weights = weights.T.contiguous()
         
         # Getting the gradient for the inputs and the weights
         # One is passed backwards, and one updates the weights!
-        grad_input, grad_weights = linear_backward(grad_output, x, weights)
+        grad_weight = linear_backward_weights(grad_output, X)
+        grad_input = linear_backward_inputs(grad_output, weights)
         
         # Return gradients for each input in same order as forward
-        return grad_input, grad_weights
+        return grad_input, grad_weight
 
 class Linear(nn.Module):
     def __init__(self, 

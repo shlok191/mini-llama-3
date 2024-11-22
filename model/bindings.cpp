@@ -9,11 +9,15 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("X"),
         py::arg("weights"));
 
-    m.def("linear_backward", &linear_backward_cuda,
-        "CUDA Linear Backward",
+    m.def("linear_backward_inputs", &linear_backward_inputs_cuda,
+        "CUDA Linear Backward Inputs",
         py::arg("grad_output"),
-        py::arg("input"),
-        py::arg("weights"));
+        py::arg("weights_T"));
+
+    m.def("linear_backward_weights", &linear_backward_weights_cuda,
+        "CUDA Linear Backward Weights",
+        py::arg("grad_output"),
+        py::arg("input_T"));
 
     m.def("embedding_forward", &embedding_forward_cuda,
         "CUDA Embedding Forward",

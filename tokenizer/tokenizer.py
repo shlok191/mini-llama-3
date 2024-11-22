@@ -255,7 +255,7 @@ class MiniLlamaTokenizer:
         ]
         
         # Initialize and train tokenizer
-        tokenizer = MiniLlamaTokenizer(texts, iterations=100)
+        tokenizer = MiniLlamaTokenizer(texts, iterations=1000)
         tokenizer.train()
         
         # Test encoding/decoding

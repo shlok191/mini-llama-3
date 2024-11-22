@@ -6,50 +6,120 @@
 
 // Defines the number of rows processed for the query matrix / cols of the key transposed matrix
 #define BLOCK_SIZE 32
-#define CHUNK_SIZE 16
-#define EMBED_DIM 512 
+#define CHUNK_SIZE 32
+#define VECTOR_WIDTH 2 
+#define EMBED_DIM 256
+#define THREAD_WORK 128
 
 __global__ void flash_attn_score_kernel(
-    const float* __restrict__ queries,
-    const float* __restrict__ keys,
-    const float* __restrict__ values,
-    float* __restrict__ output,
+    const float* __restrict__ query,  // Shape: [SEQUENCE LENGTH][EMBEDDING DIM]
+    const float* __restrict__ key,    // Shape: [SEQUENCE LENGTH][EMBEDDING DIM]  
+    const float* __restrict__ value,  // Shape: [SEQUENCE LENGTH][EMBEDDING DIM]
+    float* __restrict__ attn,         // Shape: [SEQUENCE LENGTH][SEQUENCE LENGTH]
     const int sequence_length 
 ){
 
     // Defining spaces in shared memory to capture partial QK^T matrix :)
-    __shared__ float query_tile[CHUNK_SIZE][EMBED_DIM]; // Takes 16 x 512 x 32 / 8 x 1024 = 32 KB
-    __shared__ float key_tile[CHUNK_SIZE][EMBED_DIM];   // Takes 16 x 512 x 32 / 8 x 1024 = 32 KB 
-    __shared__ float value_tile[CHUNK_SIZE][EMBED_DIM]; // Takes 16 x 512 x 32 / 8 x 1024 = 32 KB
-    __shared__ float finished[CHUNK_SIZE][CHUNK_SIZE];  // Takes 16 x 8 x 32 / 8 x 1024   = 0.5 KB memory 
+    __shared__ float query_tile[CHUNK_SIZE][EMBED_DIM]; // Takes 32 x 256 x (32 / 8) = 32 KB
+    __shared__ float key_tile[CHUNK_SIZE][EMBED_DIM];   // Takes 32 x 256 x (32 / 8) = 32 KB 
 
-    // For each of the Q, K, and V matrices, each thread loads in 8 elements
-    // Each warp in turn, loads in 256 elements per row! 1 row = 2 warps hence :)
+    __shared__ float max_tile[CHUNK_SIZE];  // Max for each row
+    __shared__ float sum_tile[CHUNK_SIZE];  // Softmax denominator for each row
 
+    #pragma unroll
+    for (int i = 0; i < CHUNK_SIZE; i++) {
+        max_tile[i] = -INFINITY;
+        sum_tile[i] = 0.0f;
+    }
+
+    const float scale = 1.0f / sqrt(EMBED_DIM);
+
+    // For each of the Q, and K matrices, each thread loads in 8 elements
     const int NUM_TILES = sequence_length / CHUNK_SIZE;
 
-    for(int i = 0; i < NUM_TILES; i++){
+    for(int row_offset = 0; row_offset < NUM_TILES; row_offset++){
 
-        // First, we populate our shared memory
-        const int thread_row = (i * CHUNK_SIZE) + threadIdx.y / 2;
-        const int thread_column = (threadIdx.y % 2) * (EMBED_DIM / 2) + threadIdx.x;
+        // First, we populate our shared memory with query
 
-        // Each thread pulls in 4 floats at once, twice
-        for(int j = 0; j < 2; j++){
+        // Keeping this in the outer loop since every column of the key matrix will be multiplied with
+        // the query matrix row, and keeping it in memory longer is more efficient!
+        const int global_row_Q = (row_offset * CHUNK_SIZE) + threadIdx.y;
+        int column_Q = threadIdx.x * 4;
+        
+        #pragma unroll
+        for(int j = 0; j < VECTOR_WIDTH; j++){
+                
+            float4* query_ptr = reinterpret_cast<float4*>(&query[global_row_Q * EMBED_DIM + column_Q]);
+            float4* shared_ptr = reinterpret_cast<float4*>(&query_tile[threadIdx.y][column_Q]);
 
-            float4* query_tile_ptr = reinterpret_cast<float4*>(&query_tile[thread_row * EMBED_DIM + thread_column + (j * 4)]);
+            *shared_ptr = *query_ptr;
             
+            // Strided fetches :)
+            column_Q += BLOCK_SIZE * 4;
+        }
+        
+        __syncthreads();
+
+        for(int col_offset = 0; col_offset < NUM_TILES; col_offset++){
+            
+            // Now, we pull in the value matrix!
+            const int global_row_K = (col_offset * CHUNK_SIZE) + threadIdx.y;
+            int column_K = threadIdx.x * 4;
+            
+            #pragma unroll
+            for(int j = 0; j < VECTOR_WIDTH; j++){
+                    
+                float4* key_ptr = reinterpret_cast<float4*>(&key[global_row_K * EMBED_DIM + column_K]);
+                float4* shared_ptr = reinterpret_cast<float4*>(&key_tile[threadIdx.y][column_K]);
+
+                *shared_ptr = *key_ptr;
+                
+                // Strided fetches :)
+                column_K += BLOCK_SIZE * 4; 
+            }
+            
+            // Ensuring the entire key matrix is loaded into shared memory before we proceed!
+            __syncthreads();
+            
+            float score = 0.0f;
+
+            #pragma unroll
+            for(int i = 0; i < EMBED_DIM; i++){
+                score += query_tile[threadIdx.y][i] * key_tile[threadIdx.x][i];
+            }
+
+
+            // Calculating scaled attention score
+            score *= scale;
+
+            // Using atomicMax to update the maximum score for this row
+            atomicMax(&max_tile[threadIdx.y], score);
+            __syncthreads();
+
+            // Calculating the exp(score - max) for numerical stability
+            float exp_score = expf(score - max_tile[threadIdx.y]);
+
+            // Updating the running sum for softmax denominator
+            atomicAdd(&sum_tile[threadIdx.y], exp_score);
+            __syncthreads();
+
+            // Write the final normalized attention score
+            int row_idx = row_offset * CHUNK_SIZE + threadIdx.y;
+            int col_idx = col_offset * CHUNK_SIZE + threadIdx.x;
+
+            attn[row_idx * sequence_length + col_idx] = exp_score / sum_tile[threadIdx.y];
+
+            __syncthreads();
         }
     }
 }
 
-
 // Output projection kernel
-__global__ void output_projection_kernel(
-    const float* __restrict__ attention_out,  // [num_heads][seq_len][head_dim]
-    const float* __restrict__ Wo,             // [model_dim][num_heads * head_dim]
-    float* __restrict__ output,               // [seq_len][model_dim]
-    const int seq_length,
+__global__ void value_output_projection_kernel(
+    const float* __restrict__ value,    // [seq_len][head_dim]
+    const float* __restrict__ output,   // [model_dim][num_heads * head_dim]
+    float* __restrict__ attn,          //  [seq_len][model_dim]
+    const int seq_length,   
     const int num_heads,
     const int model_dim
 ) {
@@ -92,8 +162,8 @@ __global__ void output_projection_kernel(
 }
 
 // Main function to run multi-head attention
-void multi_head_attention(
-    const torch::Tensor& queries,     
+torch::Tensor multi_head_attention(
+    const torch::Tensor& query,     
     const torch::Tensor& keys,         
     const torch::Tensor& values,       
     const torch::Tensor& W_output,     

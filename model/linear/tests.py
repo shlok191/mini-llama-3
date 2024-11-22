@@ -11,11 +11,11 @@ def wrapper(X, weights):
 device = torch.device('cuda')
 
 # Define dimensions (ensure they are multiples of 256)
-in_features = 4096
-out_features = 4096
+in_features = 512
+out_features = 1024
 
 # Generate random input data and weights
-X = torch.randn(in_features, in_features, device=device, dtype=torch.float32)
+X = torch.randn(64, in_features, device=device, dtype=torch.float32)
 weights = torch.randn(in_features, out_features, device=device, dtype=torch.float32)
 
 # Standard PyTorch matrix multiplication
