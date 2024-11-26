@@ -1,6 +1,7 @@
 #include <torch/extension.h>
 #include "linear/linear.h"
 #include "embedding/embedding.h"
+#include "attention/attention.h"
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     
@@ -29,4 +30,9 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("grad_output"),
         py::arg("indices"),
         py::arg("table"));
+
+    m.def("calculate_attention_scores", &calculate_attention_scores_cuda, 
+        "Calculate attention scores (CUDA)",
+        py::arg("query"),
+        py::arg("key"));
 }

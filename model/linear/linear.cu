@@ -12,7 +12,7 @@
 #define VECTOR_WIDTH 4 // The chunk in which we are loading in values (here, 4 values per mem. operation)
 
 // Each kernel utilizes 32 KB of shared memory when we use float32 values!
-// Therefore, we can run a total of 6 blocks per SM :)
+// Therefore, we can run a total of 3 blocks per SM :)
 // This also maximizes active warps per SM!
 
 #define CHECK_CUDA(x) TORCH_CHECK(x.device().is_cuda(), #x " must be a CUDA tensor")

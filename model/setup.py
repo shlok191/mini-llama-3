@@ -31,7 +31,8 @@ setup(
             sources=[
                 './bindings.cpp',     
                 './embedding/embedding.cu',           
-                './linear/linear.cu',       
+                './linear/linear.cu',   
+                './attention/attention.cu'    
             ],
             
             # Include directories
@@ -50,6 +51,7 @@ setup(
                 ],
                 'nvcc': [
                     '-O3',                         # High optimization level
+                    '-G',
                     '--use_fast_math',             # Use fast math operations
                     '-std=c++17',                  # C++ standard
                     '--ptxas-options=-v',          # Verbose PTXAS output
