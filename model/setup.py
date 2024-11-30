@@ -14,7 +14,7 @@ if not os.path.exists(cuda_home):
 
 setup(
     # Basic package information
-    name="cuda_kernels",
+    name="mini_llama",
     version="0.1.0",
     author="Shlok Sabarwal",
     author_email="ssabarwal@wisc.edu",
@@ -27,7 +27,7 @@ setup(
     # Extension module configuration
     ext_modules=[
         CUDAExtension(
-            name='cuda_kernels',  
+            name='mini_llama',  
             sources=[
                 './bindings.cpp',     
                 './embedding/embedding.cu',           
@@ -51,7 +51,6 @@ setup(
                 ],
                 'nvcc': [
                     '-O3',                         # High optimization level
-                    '-G',
                     '--use_fast_math',             # Use fast math operations
                     '-std=c++17',                  # C++ standard
                     '--ptxas-options=-v',          # Verbose PTXAS output

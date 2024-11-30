@@ -31,8 +31,9 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("indices"),
         py::arg("table"));
 
-    m.def("calculate_attention_scores", &calculate_attention_scores_cuda, 
+    m.def("attention_forward", &calculate_attention_scores_cuda, 
         "Calculate attention scores (CUDA)",
         py::arg("query"),
-        py::arg("key"));
+        py::arg("key"),
+        py::arg("value"));
 }
