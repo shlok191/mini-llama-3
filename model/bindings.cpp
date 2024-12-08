@@ -36,4 +36,13 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("query"),
         py::arg("key"),
         py::arg("value"));
+
+    m.def("attention_backward", &calculate_attention_scores_backward_cuda,
+        "Calculate attention scores backward (CUDA)",
+        py::arg("query"),
+        py::arg("key"),
+        py::arg("value"),
+        py::arg("output"),
+        py::arg("d_output"),
+        py::arg("logexp"));
 }

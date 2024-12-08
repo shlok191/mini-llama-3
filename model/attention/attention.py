@@ -69,6 +69,6 @@ class SDPAttention(nn.Module):
         )
         
         # Merge heads and project back
-        attn_output = attn_output.view(-1, hidden_states.size(1), self.num_heads * self.head_dim)
+        attn_output, logsumexp = attn_output.view(-1, hidden_states.size(1), self.num_heads * self.head_dim)
         return self.o_proj(attn_output)
     

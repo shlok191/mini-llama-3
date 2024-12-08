@@ -21,6 +21,7 @@ def test_attention_implementation():
     
     # Run your CUDA implementation
     cuda_output = mini_llama.attention_forward(query, key, value)
+    print(cuda_output)
     
     # Compute the reference PyTorch implementation
     # First, compute attention scores
