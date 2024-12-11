@@ -1,52 +1,66 @@
 import torch
 import torch.nn as nn
+import math
 
 class RoPEmbedding(nn.Module):
-    
-    def __init__(self, dim: int):
+    def __init__(self, dim: int, base: int = 10000):
         """
-        Creating a custom, simplified Rotary-Positional (RoPE) embedding
-
-        Args:
-            dim (int): Dimensionality of the embeddings. Should be even.
-        """
+        Initialize Rotary Position Embeddings (RoPE) for single-batch inputs.
         
-        assert dim % 2 == 0, "Embedding dimension must be even for RoPE."
+        This implementation assumes inputs will always have shape (seq_len, dim),
+        effectively treating batch size as 1 and removing that dimension entirely.
+        
+        Args:
+            dim (int): Embedding dimension (must be even)
+            base (int): Base for the frequency calculations (default: 10000 as in original paper)
+        """
+        super().__init__()
+        assert dim % 2 == 0, f"Embedding dimension must be even for RoPE, got {dim}"
         self.dim = dim
         
-        # Precomputing sinusoidal frequencies for the embeddings (assuming max seq length of 10,000)
-        inv_frequencies = 1.0 / (10000 ** (torch.arange(0, dim, 2).float() / dim))
+        # Create frequency bands using geometric sequence
+        # Each pair of dimensions shares the same frequency
+        exponents = torch.arange(0, dim, 2).float() / dim
+        inv_frequencies = 1.0 / (base ** exponents)
         
-        # Registering the inverse frequencies
+        # Register the frequencies as a buffer (persistent but not a parameter)
         self.register_buffer('inv_frequencies', inv_frequencies)
-
-    def forward(self, x: torch.Tensor):
+        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Apply the RoPE embedding to the input tensor.
-
+        Apply rotary position embeddings to input tensor.
+        
         Args:
-            x (torch.Tensor): Input tensor of shape (batch_size, seq_len, dim).
-
+            x (torch.Tensor): Input tensor of shape (seq_len, dim)
+                            No batch dimension is expected.
+        
         Returns:
-            torch.Tensor: Tensor with RoPE applied, same shape as input.
+            torch.Tensor: Transformed tensor with same shape as input (seq_len, dim)
         """
         
-        # Getting the appropriate dimensions
-        _, seq_len, dim = x.shape
+        seq_len, dim = x.shape
+        assert dim == self.dim, f"Input dimension {dim} must match embedding dimension {self.dim}"
         
-        assert dim == self.dim, "Input dimension must match embedding dimension."
+        # Create position indices for the sequence
+        positions = torch.arange(seq_len, device=x.device).float()
         
-        # Computing the positional embeddings
-        positions = torch.arange(seq_len, dtype=torch.float32, device=x.device).unsqueeze(1)
+        # Compute rotation angles for each position and frequency
+        # Shape: (seq_len, dim//2)
+        angles = positions.unsqueeze(1) * self.inv_frequencies
         
-        # Calculating the positional embeddings for each token (i) and frequency (j)
-        sinusoidal_inp = torch.einsum("i,j->ij", positions, self.inv_frequencies)
+        # Compute sin and cos for the rotation
+        sin = torch.sin(angles)  # (seq_len, dim//2)
+        cos = torch.cos(angles)  # (seq_len, dim//2)
         
-        # Sin will be multiplied with odd places, and cosine with the even ones!
-        sin, cos = sinusoidal_inp.sin(), sinusoidal_inp.cos()
+        # Split input into even and odd dimensions
+        x_even = x[:, ::2]  # (seq_len, dim//2)
+        x_odd = x[:, 1::2]  # (seq_len, dim//2)
         
-        # Interleaving dimensions to apply RoPE
-        x1, x2 = x[..., ::2], x[..., 1::2]
-        rotated_X = torch.cat([x1 * cos - x2 * sin, x1 * sin + x2 * cos], dim=-1)
+        # Apply rotation using the rotation matrix:
+        # [cos θ, -sin θ]
+        # [sin θ,  cos θ]
+        rotated = torch.empty_like(x)
+        rotated[:, ::2] = x_even * cos - x_odd * sin    # Real part
+        rotated[:, 1::2] = x_even * sin + x_odd * cos   # Imaginary part
         
-        return rotated_X
+        return rotated

@@ -322,17 +322,17 @@ __global__ void calculate_attention_scores_backwards(
     // I dynamically allocate memory since it exceeds 48 KB :)
     extern __shared__ float shared_memory[];
 
-    // Defining shared memory blocks for the weights
+    // Defining shared memory blocks for all weights with QUERY_ROWS_BACK rows :)
     float* query_tile_base    = shared_memory;
-    float* key_tile_base      = &shared_memory[QUERY_ROWS_BACK * EMBED_DIM];
-    float* value_tile_base    = &shared_memory[(QUERY_ROWS_BACK + KV_ROWS_BACK) * EMBED_DIM];
-    float* output_tile_base   = &shared_memory[(QUERY_ROWS_BACK + 2 * KV_ROWS_BACK) * EMBED_DIM];
-
-    // Defining shared memory blocks for the derivatives
-    float* d_query_tile_base  = &shared_memory[2 * (QUERY_ROWS_BACK + KV_ROWS_BACK) * EMBED_DIM];
-    float* d_key_tile_base    = &shared_memory[(3 * QUERY_ROWS_BACK + 2 * KV_ROWS_BACK) * EMBED_DIM];
-    float* d_value_tile_base  = &shared_memory[3 * (QUERY_ROWS_BACK + KV_ROWS_BACK) * EMBED_DIM];
-    float* d_output_tile_base = &shared_memory[(3 * QUERY_ROWS_BACK + 4 * KV_ROWS_BACK) * EMBED_DIM];
+    float* output_tile_base   = &shared_memory[QUERY_ROWS_BACK * EMBED_DIM];
+    float* d_query_tile_base  = &shared_memory[2 * QUERY_ROWS_BACK * EMBED_DIM];
+    float* d_output_tile_base = &shared_memory[3 * QUERY_ROWS_BACK * EMBED_DIM];
+    
+    // Defining shared memory blocks for all weights with KV_ROWS_BACK now!
+    float* key_tile_base      = &shared_memory[4 * QUERY_ROWS_BACK * EMBED_DIM];
+    float* value_tile_base    = &shared_memory[(4 * QUERY_ROWS_BACK + KV_ROWS_BACK) * EMBED_DIM];
+    float* d_key_tile_base    = &shared_memory[(4 * QUERY_ROWS_BACK + 2 * KV_ROWS_BACK) * EMBED_DIM];
+    float* d_value_tile_base  = &shared_memory[(4 * QUERY_ROWS_BACK + 3 * KV_ROWS_BACK) * EMBED_DIM];
     
     // Storing normalization and D values    
     float* scores_tile_base   = &shared_memory[4 * (QUERY_ROWS_BACK + KV_ROWS_BACK) * EMBED_DIM];
@@ -361,7 +361,7 @@ __global__ void calculate_attention_scores_backwards(
     #pragma unroll
     for(int i = 0; i < MAX_SEQUENCE_LENGTH; i += KV_ROWS_BACK){
         
-        // Fetching in the query, key and the derivative blocks
+        // Fetching in the query, key and their derivative blocks
         if(threadIdx.y < KV_ROWS_BACK){
 
             #pragma unroll
@@ -419,21 +419,19 @@ __global__ void calculate_attention_scores_backwards(
             int key_offset = (threadIdx.y % 2) * 4 + threadIdx.x / 8;
             int row_offset = (threadIdx.x % 8) * 32;
 
-            __syncthreads();
-
             // Calculating the score of dimension [16 x 8] and 2 warps calculate one row of values
             #pragma unroll
             for(int k = 0; k < 32; k++){
                 sum += query_tile(threadIdx.y / 2, row_offset + k) * key_tile(key_offset, row_offset + k);
             }
 
-            __syncthreads();
+            __syncwarp();
             
             sum += __shfl_down_sync(0xff, sum, 4);
             sum += __shfl_down_sync(0xff, sum, 2);
             sum += __shfl_down_sync(0xff, sum, 1);
 
-            __syncthreads();
+            __syncwarp();
 
             float logexpval = logexp[j + threadIdx.y];
 
@@ -465,20 +463,18 @@ __global__ void calculate_attention_scores_backwards(
 
             sum = 0;
 
-            __syncthreads();
-
             #pragma unroll
             for(int k = 0; k < 32; k++){
                 sum += d_output_tile(threadIdx.y / 2, row_offset + k) * value_tile(key_offset, row_offset + k);
             }
 
-            __syncthreads();
+            __syncwarp();
 
             sum += __shfl_down_sync(0xff, sum, 4);
             sum += __shfl_down_sync(0xff, sum, 2);
             sum += __shfl_down_sync(0xff, sum, 1);
 
-            __syncthreads();
+            __syncwarp();
 
             if(threadIdx.x % 8 == 0){
                 d_P_tile(threadIdx.y / 2, (threadIdx.y % 2) * 4 + threadIdx.x / 8) = sum - D[row_offset];;

@@ -115,38 +115,38 @@ def test_attention_backward():
     )
     
     print(grad_query)
-    # torch.cuda.synchronize()
+    torch.cuda.synchronize()
     
-    # # Now compute gradients using PyTorch's autograd for comparison
-    # # First, compute attention scores using PyTorch operations
-    # scores = torch.matmul(query, key.transpose(0, 1)) / 16.0
-    # attention_weights = torch.softmax(scores, dim=-1)
-    # torch_output = torch.matmul(attention_weights, value)
+    # Now compute gradients using PyTorch's autograd for comparison
+    # First, compute attention scores using PyTorch operations
+    scores = torch.matmul(query, key.transpose(0, 1)) / 16.0
+    attention_weights = torch.softmax(scores, dim=-1)
+    torch_output = torch.matmul(attention_weights, value)
     
-    # # Compute backward pass
-    # torch_output.backward(grad_output)
+    # Compute backward pass
+    torch_output.backward(grad_output)
     
-    # # Compare gradients
-    # print("Maximum difference in query gradients:", 
-    #       torch.max(torch.abs(grad_query - query.grad)).item())
+    # Compare gradients
+    print("Maximum difference in query gradients:", 
+          torch.max(torch.abs(grad_query - query.grad)).item())
     
-    # print("Maximum difference in key gradients:", 
-    #       torch.max(torch.abs(grad_key - key.grad)).item())
+    print("Maximum difference in key gradients:", 
+          torch.max(torch.abs(grad_key - key.grad)).item())
     
-    # print("Maximum difference in value gradients:", 
-    #       torch.max(torch.abs(grad_value - value.grad)).item())
+    print("Maximum difference in value gradients:", 
+          torch.max(torch.abs(grad_value - value.grad)).item())
     
-    # # Assert that gradients are close enough (using a reasonable tolerance)
-    # assert torch.allclose(grad_query, query.grad, rtol=1e-3, atol=1e-3), \
-    #     "Query gradients don't match!"
+    # Assert that gradients are close enough (using a reasonable tolerance)
+    assert torch.allclose(grad_query, query.grad, rtol=1e-3, atol=1e-3), \
+        "Query gradients don't match!"
         
-    # assert torch.allclose(grad_key, key.grad, rtol=1e-3, atol=1e-3), \
-    #     "Key gradients don't match!"
+    assert torch.allclose(grad_key, key.grad, rtol=1e-3, atol=1e-3), \
+        "Key gradients don't match!"
     
-    # assert torch.allclose(grad_value, value.grad, rtol=1e-3, atol=1e-3), \
-    #     "Value gradients don't match!"
+    assert torch.allclose(grad_value, value.grad, rtol=1e-3, atol=1e-3), \
+        "Value gradients don't match!"
     
-    # print("All gradient checks passed!")
+    print("All gradient checks passed!")
 
 if __name__ == "__main__":
     test_attention_backward()

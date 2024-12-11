@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from model import Linear
+from mini_llama import Linear
 
 class MLPLayer(nn.Module):
     
@@ -19,7 +19,6 @@ class MLPLayer(nn.Module):
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size
         self.bias = bias
-        self.activation_fn = activation_fn
         
         # Utilizing the custom linear layers :)
         self.gate_proj = Linear(self.hidden_size, self.intermediate_size, bias=bias)
