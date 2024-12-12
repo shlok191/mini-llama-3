@@ -545,7 +545,9 @@ __global__ void calculate_attention_scores_backwards(
 
         __syncthreads();
 
-        // Storing the dQuery values!
+        // Storing the dQuery values
+        // We use atomic additions to avoid inter-block race conditions!
+
         float* d_query_base = &d_query[local_offset + x_offset];
         float* shared_d_query_base = &d_query_tile(threadIdx.y / 2, x_offset);
         
@@ -556,6 +558,14 @@ __global__ void calculate_attention_scores_backwards(
 
         // Ensuring all move operations are complete before we proceed :)
         __syncthreads();
+
+        /*********************************
+        *
+        * Finally, we calculate dK!
+        * 
+        * 1. dK = dK + dS^T x Q 
+        *
+        *********************************/
 
         const int key_offset = (threadIdx.y % 4) * 64 + threadIdx.x * 2;
 
@@ -581,13 +591,12 @@ __global__ void calculate_attention_scores_backwards(
 
         float4* d_key_ptr = reinterpret_cast<float4*>(&d_key[o]);
         float4* shared_d_key_ptr = reinterpret_cast<float4*>(&d_key_tile(threadIdx.y / 2, x_offset));
-        
-        *d_key_ptr = *shared_d_key_ptr;
     
         float4* d_value_ptr = reinterpret_cast<float4*>(&d_value[o]);
         float4* shared_d_value_ptr = reinterpret_cast<float4*>(&d_value_tile(threadIdx.y / 2, x_offset));
 
         *d_value_ptr = *shared_d_value_ptr;
+        *d_key_ptr = *shared_d_key_ptr;
     }
 }
 
