@@ -44,5 +44,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("value"),
         py::arg("output"),
         py::arg("d_output"),
-        py::arg("logexp"));
+        py::arg("max_rows"),
+        py::arg("sum_rows"));
 }

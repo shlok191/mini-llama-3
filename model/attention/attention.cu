@@ -34,7 +34,7 @@
 #define QUERY_ROWS 32
 #define KV_ROWS 16
 #define EMBED_DIM 256
-#define MAX_SEQUENCE_LENGTH 256
+#define MAX_SEQUENCE_LENGTH 32
 
 __global__ void calculate_attention_scores(
     const float* query,  // Shape: [SEQUENCE LENGTH][EMBED DIM]
@@ -42,8 +42,7 @@ __global__ void calculate_attention_scores(
     const float* value,  // Shape: [SEQUENCE LENGTH][EMBED DIM]
     float* max_rows,     // Shape: [SEQUENCE LENGTH] 
     float* sum_rows,     // Shape: [SEQUENCE LENGTH]
-    float* output,       // Shape: [SEQUENCE LENGTH][EMBED DIM]
-    float* logsumexp     // Shape: [SEQUENCE LENGTH]
+    float* output        // Shape: [SEQUENCE LENGTH][EMBED DIM]
 ){
     
     /****************************************************************
@@ -65,10 +64,9 @@ __global__ void calculate_attention_scores(
     // Keeps track of the softmax values!
     float* softmax_sum = &shared_memory[2 * (QUERY_ROWS * EMBED_DIM + KV_ROWS * EMBED_DIM)];
     float* softmax_max = &shared_memory[2 * (QUERY_ROWS * EMBED_DIM + KV_ROWS * EMBED_DIM) + BLOCK_DIM];
-    float* softmax_logexp = &shared_memory[2 * (QUERY_ROWS * EMBED_DIM + KV_ROWS * EMBED_DIM + BLOCK_DIM)];
-
+    
     // Stores the intermediate output
-    float* intermediate_out_base = &shared_memory[2 * (QUERY_ROWS * EMBED_DIM + KV_ROWS * EMBED_DIM + BLOCK_DIM) + BLOCK_DIM];
+    float* intermediate_out_base = &shared_memory[2 * (QUERY_ROWS * EMBED_DIM + KV_ROWS * EMBED_DIM + BLOCK_DIM)];
 
     // Defining some helpful macros
     #define query_tile(row, col) query_tile_base[(row) * EMBED_DIM + (col)]
@@ -76,16 +74,16 @@ __global__ void calculate_attention_scores(
     #define key_tile(row, col) key_tile_base[(row) * EMBED_DIM + (col)]
     #define value_tile(row, col) value_tile_base[(row) * EMBED_DIM + (col)]
     #define intermediate_out(row, col) intermediate_out_base[(row) * KV_ROWS + (col)]
-
+    
+    // Defining the scaling factor to reduce softmax distribution sharpness
+    const float scale = 1.0f / sqrt(EMBED_DIM);
+    
     __syncthreads();
 
     #pragma unroll
     for(int i = 0; i < EMBED_DIM; i += 32){
         output_tile(threadIdx.y, threadIdx.x + i) = 0.0f;
     }
-
-    // Defining the scaling factor to reduce softmax distribution sharpness
-    const float scale = 1.0f / sqrt(EMBED_DIM);
 
     // Fetching in the query matrix!
     const int row_offset = blockIdx.x * BLOCK_DIM;
@@ -244,16 +242,13 @@ __global__ void calculate_attention_scores(
         prev_max = softmax_max[threadIdx.y];
         score = 0.0f;
 
-        if(threadIdx.x == 0){
-            softmax_logexp[threadIdx.y] = prev_max + logf(softmax_sum[threadIdx.y]);
-        }
-
         __syncthreads();
     }
 
     // Storing the logsum exponential value
     if(threadIdx.x == 0){
-        logsumexp[row_offset + threadIdx.y] = softmax_logexp[threadIdx.y];
+        max_rows[row_offset + threadIdx.y] = softmax_max[threadIdx.y];
+        sum_rows[row_offset + threadIdx.y] = softmax_sum[threadIdx.y];
     }
 
     // Lastly, we normalize and write the output tile to the global output matrix!
@@ -306,16 +301,17 @@ __global__ void calculate_attention_scores(
 #define QUERY_ROWS_BACK 16
 
 __global__ void calculate_attention_scores_backwards(
-    const float* query,    // Shape: [SEQUENCE LENGTH][EMBED DIM]
-    const float* key,      // Shape: [SEQUENCE LENGTH][EMBED DIM]
-    const float* value,    // Shape: [SEQUENCE LENGTH][EMBED DIM]
-    const float* output,   // Shape: [SEQUENCE LENGTH][EMBED DIM]
-    float* d_query,        // Shape: [SEQUENCE LENGTH][EMBED DIM]
-    float* d_key,          // Shape: [SEQUENCE LENGTH][EMBED DIM]
-    float* d_value,        // Shape: [SEQUENCE LENGTH][EMBED DIM]
-    float* d_output,       // Shape: [SEQUENCE LENGTH][EMBED DIM]
-    float* logexp,         // Shape: [SEQUENCE LENGTH] 
-    float* D               // Shape: [SEQUENCE LENGTH]
+    const float* __restrict__ query,    // Shape: [SEQUENCE LENGTH][EMBED DIM]
+    const float* __restrict__ key,      // Shape: [SEQUENCE LENGTH][EMBED DIM]
+    const float* __restrict__ value,    // Shape: [SEQUENCE LENGTH][EMBED DIM]
+    const float* __restrict__ output,   // Shape: [SEQUENCE LENGTH][EMBED DIM]
+    float* __restrict__ d_query,        // Shape: [SEQUENCE LENGTH][EMBED DIM]
+    float* __restrict__ d_key,          // Shape: [SEQUENCE LENGTH][EMBED DIM]
+    float* __restrict__ d_value,        // Shape: [SEQUENCE LENGTH][EMBED DIM]
+    float* __restrict__ d_output,       // Shape: [SEQUENCE LENGTH][EMBED DIM]
+    float* __restrict__ max_rows,       // Shape: [SEQUENCE LENGTH] 
+    float* __restrict__ sum_rows,       // Shape: [SEQUENCE LENGTH]
+    float* __restrict__ D               // Shape: [SEQUENCE LENGTH]
 ){
 
     // First, we calculate the D matrix
@@ -323,21 +319,21 @@ __global__ void calculate_attention_scores_backwards(
     extern __shared__ float shared_memory[];
 
     // Defining shared memory blocks for all weights with QUERY_ROWS_BACK rows :)
-    float* query_tile_base    = shared_memory;
-    float* output_tile_base   = &shared_memory[QUERY_ROWS_BACK * EMBED_DIM];
-    float* d_query_tile_base  = &shared_memory[2 * QUERY_ROWS_BACK * EMBED_DIM];
-    float* d_output_tile_base = &shared_memory[3 * QUERY_ROWS_BACK * EMBED_DIM];
+    float* __restrict__ query_tile_base    = shared_memory;
+    float* __restrict__ output_tile_base   = &shared_memory[QUERY_ROWS_BACK * EMBED_DIM];
+    float* __restrict__ d_query_tile_base  = &shared_memory[2 * QUERY_ROWS_BACK * EMBED_DIM];
+    float* __restrict__ d_output_tile_base = &shared_memory[3 * QUERY_ROWS_BACK * EMBED_DIM];
     
     // Defining shared memory blocks for all weights with KV_ROWS_BACK now!
-    float* key_tile_base      = &shared_memory[4 * QUERY_ROWS_BACK * EMBED_DIM];
-    float* value_tile_base    = &shared_memory[(4 * QUERY_ROWS_BACK + KV_ROWS_BACK) * EMBED_DIM];
-    float* d_key_tile_base    = &shared_memory[(4 * QUERY_ROWS_BACK + 2 * KV_ROWS_BACK) * EMBED_DIM];
-    float* d_value_tile_base  = &shared_memory[(4 * QUERY_ROWS_BACK + 3 * KV_ROWS_BACK) * EMBED_DIM];
+    float* __restrict__ key_tile_base      = &shared_memory[4 * QUERY_ROWS_BACK * EMBED_DIM];
+    float* __restrict__ value_tile_base    = &shared_memory[(4 * QUERY_ROWS_BACK + KV_ROWS_BACK) * EMBED_DIM];
+    float* __restrict__ d_key_tile_base    = &shared_memory[(4 * QUERY_ROWS_BACK + 2 * KV_ROWS_BACK) * EMBED_DIM];
+    float* __restrict__ d_value_tile_base  = &shared_memory[(4 * QUERY_ROWS_BACK + 3 * KV_ROWS_BACK) * EMBED_DIM];
     
     // Storing normalization and D values    
-    float* scores_tile_base   = &shared_memory[4 * (QUERY_ROWS_BACK + KV_ROWS_BACK) * EMBED_DIM];
-    float* d_P_tile_base      = &shared_memory[4 * (QUERY_ROWS_BACK + KV_ROWS_BACK) * EMBED_DIM + KV_ROWS_BACK * QUERY_ROWS_BACK];
-    float* d_S_tile_base      = &shared_memory[4 * (QUERY_ROWS_BACK + KV_ROWS_BACK) * EMBED_DIM + 2 * KV_ROWS_BACK * QUERY_ROWS_BACK]; 
+    float* __restrict__ scores_tile_base   = &shared_memory[4 * (QUERY_ROWS_BACK + KV_ROWS_BACK) * EMBED_DIM];
+    float* __restrict__ d_P_tile_base      = &shared_memory[4 * (QUERY_ROWS_BACK + KV_ROWS_BACK) * EMBED_DIM + KV_ROWS_BACK * QUERY_ROWS_BACK];
+    float* __restrict__ d_S_tile_base      = &shared_memory[4 * (QUERY_ROWS_BACK + KV_ROWS_BACK) * EMBED_DIM + 2 * KV_ROWS_BACK * QUERY_ROWS_BACK]; 
 
     // Defining some helper macros :)
     #define query_tile(row, col)    query_tile_base[(row) * EMBED_DIM + (col)]
@@ -355,210 +351,243 @@ __global__ void calculate_attention_scores_backwards(
     #define scores_tile(row, col)   scores_tile_base[(row) * KV_ROWS_BACK + (col)]
     #define d_P_tile(row, col)      d_P_tile_base[(row) * KV_ROWS_BACK + (col)]
     #define d_S_tile(row, col)      d_S_tile_base[(row) * KV_ROWS_BACK + (col)]
+
+    const int x_offset = (threadIdx.y % 2) * 128 + threadIdx.x * 4;
+    const int y_offset = (threadIdx.y % 2) * 4 + threadIdx.x / 8;
     
-    // Fetching the logexp value
+    const float scale = 1.0 / sqrt(EMBED_DIM);
 
-    #pragma unroll
-    for(int i = 0; i < MAX_SEQUENCE_LENGTH; i += KV_ROWS_BACK){
+    // Denotes the offset per block!
+    const int i = blockIdx.x * KV_ROWS_BACK; 
+
+    /********************************************************
+    *
+    * Two rows of the block fetches one row of the matrices!
+    * This is done in float4 vectorized fetches for KV :)
+    *  
+    ********************************************************/
+
+    if(threadIdx.y < 16){ 
+    
+        const float4* key_ptr = reinterpret_cast<const float4*>(&key[(i + threadIdx.y / 2) * EMBED_DIM + x_offset]);
+        float4* shared_key_ptr = reinterpret_cast<float4*>(&key_tile(threadIdx.y / 2, x_offset));
+
+        const float4* value_ptr = reinterpret_cast<const float4*>(&value[(i + threadIdx.y / 2) * EMBED_DIM + x_offset]);
+        float4* shared_value_ptr = reinterpret_cast<float4*>(&value_tile(threadIdx.y / 2, x_offset));
         
-        // Fetching in the query, key and their derivative blocks
-        if(threadIdx.y < KV_ROWS_BACK){
+        float4* d_key_ptr = reinterpret_cast<float4*>(&d_key[(i + threadIdx.y / 2) * EMBED_DIM + x_offset]);
+        float4* shared_d_key_ptr = reinterpret_cast<float4*>(&d_key_tile(threadIdx.y / 2, x_offset));
+        
+        float4* d_value_ptr = reinterpret_cast<float4*>(&d_value[(i + threadIdx.y / 2) * EMBED_DIM + x_offset]);
+        float4* shared_d_value_ptr = reinterpret_cast<float4*>(&d_value_tile(threadIdx.y / 2, x_offset));
 
-            #pragma unroll
-            for(int j = threadIdx.x * 4; j < EMBED_DIM; j += 128){
-                
-                const float4* key_ptr = reinterpret_cast<const float4*>(&key[(i + threadIdx.y) * EMBED_DIM + j]);
-                float4* shared_key_ptr = reinterpret_cast<float4*>(&key_tile(threadIdx.y, j));
+        *shared_key_ptr = *key_ptr;
+        *shared_value_ptr = *value_ptr;
+        *shared_d_key_ptr = *d_key_ptr;
+        *shared_d_value_ptr = *d_value_ptr;
+    }
+    
+    // Now, we process the query blocks!
 
-                const float4* value_ptr = reinterpret_cast<const float4*>(&value[(i + threadIdx.y) * EMBED_DIM + j]);
-                float4* shared_value_ptr = reinterpret_cast<float4*>(&value_tile(threadIdx.y, j));
-                
-                float4* d_key_ptr = reinterpret_cast<float4*>(&d_key[(i + threadIdx.y) * EMBED_DIM + j]);
-                float4* shared_d_key_ptr = reinterpret_cast<float4*>(&d_key_tile(threadIdx.y, j));
-                
-                float4* d_value_ptr = reinterpret_cast<float4*>(&d_value[(i + threadIdx.y) * EMBED_DIM + j]);
-                float4* shared_d_value_ptr = reinterpret_cast<float4*>(&d_value_tile(threadIdx.y, j));
+    for(int j = 0; j < MAX_SEQUENCE_LENGTH; j += QUERY_ROWS_BACK){
+        
+        /********************************************************
+        *
+        * Two rows of the block fetches one row of the matrix
+        * We utilize all threads for the Q, O, dQ, dO fetches :)
+        *  
+        ********************************************************/
 
-                *shared_key_ptr = *key_ptr;
-                *shared_value_ptr = *value_ptr;
-                *shared_d_key_ptr = *d_key_ptr;
-                *shared_d_value_ptr = *d_value_ptr;
-                
-            }
+        const int local_offset = (j + threadIdx.y / 2) * EMBED_DIM;
+        
+        const float4* query_ptr = reinterpret_cast<const float4*>(&query[local_offset + x_offset]);
+        float4* shared_query_ptr = reinterpret_cast<float4*>(&query_tile(threadIdx.y / 2, x_offset));
+        
+        const float4* output_ptr = reinterpret_cast<const float4*>(&output[local_offset + x_offset]);
+        float4* shared_output_ptr = reinterpret_cast<float4*>(&output_tile(threadIdx.y / 2, x_offset));
+        
+        float4* d_output_ptr = reinterpret_cast<float4*>(&d_output[local_offset + x_offset]);
+        float4* shared_d_output_ptr = reinterpret_cast<float4*>(&d_output_tile(threadIdx.y / 2, x_offset));
+        
+        float4* d_query_ptr = reinterpret_cast<float4*>(&d_query[local_offset + x_offset]);
+        float4* shared_d_query_ptr = reinterpret_cast<float4*>(&d_query_tile(threadIdx.y / 2, x_offset));
+        
+        *shared_query_ptr = *query_ptr;
+        *shared_output_ptr = *output_ptr;
+        *shared_d_output_ptr = *d_output_ptr;
+        *shared_d_query_ptr = *d_query_ptr;
+
+        // Ensuring all move operations are complete before we proceed :)
+        __syncthreads();
+
+        /******************************************************************
+        *
+        * For Calculating QK^T of shape 16 x 8, each thread can do 1/8th
+        * of the work! This allows each thread to contribute and we use 
+        * super-fast warp level actions to sum up calculated values :)
+        *
+        ******************************************************************/
+        
+
+        int row_offset = (threadIdx.x % 8) * 32;
+        float sum = 0.0f;
+
+        // Calculating the score of dimension [16 x 8] and 2 warps calculate one row of values
+        for(int k = 0; k < 32; k++){
+            sum += query_tile(threadIdx.y / 2, row_offset + k) * key_tile(y_offset, row_offset + k);
+        }
+        
+        __syncwarp();
+
+        sum += __shfl_down_sync(0xff, sum, 4);
+        sum += __shfl_down_sync(0xff, sum, 2);
+        sum += __shfl_down_sync(0xff, sum, 1);
+
+        __syncwarp();
+
+        // Since 8 threads contribute to 1 value, one every 8 thread should store too!
+        if(threadIdx.x % 8 == 0){
+            sum *= scale;
+            scores_tile(threadIdx.y / 2, y_offset) = expf(sum - max_rows[j + threadIdx.y / 2]) / sum_rows[j + threadIdx.y / 2];
         }
 
-        for(int j = 0; j < MAX_SEQUENCE_LENGTH; j += QUERY_ROWS_BACK){
+        __syncthreads();
+        
+        /**********************************************************************
+        *
+        * Calculating derivative of Value
+        * --------------------------------
+        *
+        * To calculate dV, we follow the following formula:  
+        * dV = dV + S^T x dO; where S is calculated above :)
+        * 
+        * Since we require 8 x 256 values, each thread calculates 2 values!
+        *
+        **********************************************************************/
 
-            // Loading in the query, d_query, output and d_output tiles
-            if(threadIdx.y < QUERY_ROWS_BACK){
+        // Defining the row and column offsets for each thread
+        row_offset = threadIdx.y / 4;
+        const int offset = (threadIdx.y % 4) * 64 + threadIdx.x * 2;
 
-                #pragma unroll
-                for(int k = threadIdx.x * 4; k < EMBED_DIM; k += 128) {
-                    
-                    const float4* query_ptr = reinterpret_cast<const float4*>(&query[(j + threadIdx.y) * EMBED_DIM + k]);
-                    float4* shared_query_ptr = reinterpret_cast<float4*>(&query_tile(threadIdx.y, k));
-                    
-                    const float4* output_ptr = reinterpret_cast<const float4*>(&output[(j + threadIdx.y) * EMBED_DIM + k]);
-                    float4* shared_output_ptr = reinterpret_cast<float4*>(&output_tile(threadIdx.y, k));
-                    
-                    float4* d_output_ptr = reinterpret_cast<float4*>(&d_output[(j + threadIdx.y) * EMBED_DIM + k]);
-                    float4* shared_d_output_ptr = reinterpret_cast<float4*>(&d_output_tile(threadIdx.y, k));
-                    
-                    float4* d_query_ptr = reinterpret_cast<float4*>(&d_query[(j + threadIdx.y) * EMBED_DIM + k]);
-                    float4* shared_d_query_ptr = reinterpret_cast<float4*>(&d_query_tile(threadIdx.y, k));
-                    
-                    *shared_query_ptr = *query_ptr;
-                    *shared_output_ptr = *output_ptr;
-                    *shared_d_output_ptr = *d_output_ptr;
-                    *shared_d_query_ptr = *d_query_ptr;
-                }
-            }
-
-            float sum = 0.0f;
+        for(int k = 0; k < 2; k++){
             
-            int key_offset = (threadIdx.y % 2) * 4 + threadIdx.x / 8;
-            int row_offset = (threadIdx.x % 8) * 32;
-
-            // Calculating the score of dimension [16 x 8] and 2 warps calculate one row of values
-            #pragma unroll
-            for(int k = 0; k < 32; k++){
-                sum += query_tile(threadIdx.y / 2, row_offset + k) * key_tile(key_offset, row_offset + k);
-            }
-
-            __syncwarp();
-            
-            sum += __shfl_down_sync(0xff, sum, 4);
-            sum += __shfl_down_sync(0xff, sum, 2);
-            sum += __shfl_down_sync(0xff, sum, 1);
-
-            __syncwarp();
-
-            float logexpval = logexp[j + threadIdx.y];
-
-            // Storing the values and fetching the log exp value
-            if(threadIdx.x % 8 == 0){
-                scores_tile(threadIdx.y / 2, key_offset) = expf(sum - logexpval);
-            }
-
-            __syncthreads();
-
-            // Defining the row and column offsets for each thread
-            row_offset = threadIdx.y / 4;
-            int col_offset = (threadIdx.y % 4) * 64 + threadIdx.x * 2;
-
             sum = 0.0f;
 
-            #pragma unroll
-            for(int k = col_offset; k < col_offset + 2; k++){
-                
-                sum = 0.0f;
-
-                #pragma unroll
-                for(int l = 0; l < 16; l++){
-                    sum += scores_tile(l, row_offset) * d_output_tile(l, k);
-                }
-
-                d_value_tile(row_offset, k) += sum;
+            for(int l = 0; l < 16; l++){
+                sum += scores_tile(l, row_offset) * d_output_tile(l, k + offset);
             }
 
-            sum = 0;
-
-            #pragma unroll
-            for(int k = 0; k < 32; k++){
-                sum += d_output_tile(threadIdx.y / 2, row_offset + k) * value_tile(key_offset, row_offset + k);
-            }
-
-            __syncwarp();
-
-            sum += __shfl_down_sync(0xff, sum, 4);
-            sum += __shfl_down_sync(0xff, sum, 2);
-            sum += __shfl_down_sync(0xff, sum, 1);
-
-            __syncwarp();
-
-            if(threadIdx.x % 8 == 0){
-                d_P_tile(threadIdx.y / 2, (threadIdx.y % 2) * 4 + threadIdx.x / 8) = sum - D[row_offset];;
-            }
-
-            __syncthreads();
-
-            sum = 0.0f;
-
-            // Now we calculate the dS value
-            if(threadIdx.y < 16){
-
-                if(threadIdx.x < 8){
-                    d_S_tile(threadIdx.y, threadIdx.x) = scores_tile(threadIdx.y, threadIdx.x) * d_P_tile(threadIdx.y, threadIdx.x);
-                }
-            }
-
-            __syncthreads();
-
-            col_offset = (threadIdx.y % 2) * 128 + threadIdx.x * 4;
-
-            // Now we update the dQ matrix!
-            #pragma unroll
-            for(int k = 0; k < 4; k++){
-                
-                sum = 0.0f;
-
-                #pragma unroll
-                for(int l = 0; l < KV_ROWS_BACK; l++){
-                    sum += d_S_tile(threadIdx.y / 2, l) * key_tile(l, col_offset + k);
-                }
-
-                d_query_tile(threadIdx.y / 2, col_offset + k) += sum;
-            }
-
-            __syncthreads();
-
-            #pragma unroll
-            for(int k = threadIdx.x * 4; k < EMBED_DIM; k += 128){
-
-                float4* d_query_ptr = reinterpret_cast<float4*>(&d_query[(j + threadIdx.y) * EMBED_DIM + k]);
-                float4* shared_d_query_ptr = reinterpret_cast<float4*>(&d_query_tile(threadIdx.y, k));
-
-                *d_query_ptr = *shared_d_query_ptr;
-            
-            }
-
-            // Calculating dK
-            #pragma unroll
-            for(int k = 0; k < 2; k++){
-                
-                float sum = 0.0f;
-
-                #pragma unroll
-                for(int l = 0; l < KV_ROWS_BACK; l++){
-                    sum += d_S_tile(threadIdx.y / 2, l) * query_tile(l, col_offset + k);
-                }
-
-                d_key_tile(threadIdx.y / 2, col_offset + k) += sum;
-            }
-
-            __syncthreads();
+            d_value_tile(row_offset, k + offset) += sum;
         }
 
+
+        /************************************************************************
+        *
+        * Now we calculate the dS used to update dQ, and dK. Here are the steps:
+        * 
+        * 1. dS = dO x V^T
+        * 2. dS = S x dS - (rowsum(dO @ O))
+        *
+        ************************************************************************/
+
+        // First we calculate dO x V^T!
+
+        row_offset = (threadIdx.x % 8) * 32;
+        sum = 0;
+
+        for(int k = 0; k < 32; k++){
+            sum += d_output_tile(threadIdx.y / 2, row_offset + k) * value_tile(y_offset, row_offset + k);
+        }
+
+        __syncwarp();
+
+        sum += __shfl_down_sync(0xff, sum, 4);
+        sum += __shfl_down_sync(0xff, sum, 2);
+        sum += __shfl_down_sync(0xff, sum, 1);
+
+        __syncwarp();
+
+        // Storing the value into shared memory
+        if(threadIdx.x % 8 == 0){
+            d_P_tile(threadIdx.y / 2, y_offset) = sum - D[j + threadIdx.y / 2];
+        }
+
+        __syncthreads();
+
+        // Now we calculate the dS value! :)
         if(threadIdx.y < KV_ROWS_BACK){
 
-            #pragma unroll
-            for(int j = threadIdx.x * 4; j < EMBED_DIM; j += 128){
-                
-                float4* d_key_ptr = reinterpret_cast<float4*>(&d_key[(i + threadIdx.y) * EMBED_DIM + j]);
-                float4* shared_d_key_ptr = reinterpret_cast<float4*>(&d_key_tile(threadIdx.y, j));
-
-                *d_key_ptr = *shared_d_key_ptr;
-            }
-
-            #pragma unroll
-            for(int j = threadIdx.x * 4; j < EMBED_DIM; j += 128){
-
-                float4* d_value_ptr = reinterpret_cast<float4*>(&d_value[(i + threadIdx.y) * EMBED_DIM + j]);
-                float4* shared_d_value_ptr = reinterpret_cast<float4*>(&d_value_tile(threadIdx.y, j));
-
-                *d_value_ptr = *shared_d_value_ptr;   
+            if(threadIdx.x < QUERY_ROWS_BACK){
+                d_S_tile(threadIdx.x, threadIdx.y) = scores_tile(threadIdx.x, threadIdx.y) * d_P_tile(threadIdx.x, threadIdx.y);
             }
         }
+
+        __syncthreads();
+
+        /******************************
+        *
+        * Now we calculate the dQ!
+        * 1. dQ = dS x K
+        *
+        ******************************/
+
+        // Now we update the dQ matrix!
+        for(int k = 0; k < 4; k++){
+            
+            sum = 0.0f;
+
+            for(int l = 0; l < KV_ROWS_BACK; l++){
+                sum += d_S_tile(threadIdx.y / 2, l) * key_tile(l, x_offset + k);
+            }
+
+            d_query_tile(threadIdx.y / 2, x_offset + k) += sum * scale;
+        }
+
+        __syncthreads();
+
+        // Storing the dQuery values!
+        float* d_query_base = &d_query[local_offset + x_offset];
+        float* shared_d_query_base = &d_query_tile(threadIdx.y / 2, x_offset);
+        
+        atomicAdd(&d_query_base[0], shared_d_query_base[0]);
+        atomicAdd(&d_query_base[1], shared_d_query_base[1]);
+        atomicAdd(&d_query_base[2], shared_d_query_base[2]);
+        atomicAdd(&d_query_base[3], shared_d_query_base[3]);
+
+        // Ensuring all move operations are complete before we proceed :)
+        __syncthreads();
+
+        const int key_offset = (threadIdx.y % 4) * 64 + threadIdx.x * 2;
+
+        // Calculating dK
+        for(int k = 0; k < 2; k++){
+            
+            sum = 0.0f;
+
+            for(int l = 0; l < QUERY_ROWS_BACK; l++){
+                sum += d_S_tile(l, threadIdx.y / 4) * query_tile(l, key_offset + k);
+            }
+
+            d_key_tile(threadIdx.y / 4, key_offset + k) += sum * scale;
+        }
+    }
+
+    __syncthreads();
+
+    // Storing the dV, dK matrices back into global memory!
+    if(threadIdx.y < 16){ 
+        
+        const int o = (i + threadIdx.y / 2) * EMBED_DIM + x_offset;
+
+        float4* d_key_ptr = reinterpret_cast<float4*>(&d_key[o]);
+        float4* shared_d_key_ptr = reinterpret_cast<float4*>(&d_key_tile(threadIdx.y / 2, x_offset));
+        
+        *d_key_ptr = *shared_d_key_ptr;
+    
+        float4* d_value_ptr = reinterpret_cast<float4*>(&d_value[o]);
+        float4* shared_d_value_ptr = reinterpret_cast<float4*>(&d_value_tile(threadIdx.y / 2, x_offset));
+
+        *d_value_ptr = *shared_d_value_ptr;
     }
 }
 
@@ -573,9 +602,9 @@ std::vector<torch::Tensor> calculate_attention_scores_cuda(torch::Tensor query, 
 
     // Calculate grid and block dimensions
     dim3 threads(BLOCK_DIM, BLOCK_DIM);
-    dim3 blocks(1);
+    dim3 blocks(MAX_SEQUENCE_LENGTH / BLOCK_DIM);
 
-    size_t shared_mem_size = 2 * sizeof(float) * (BLOCK_DIM * EMBED_DIM + 16 * EMBED_DIM + BLOCK_DIM) + 
+    size_t shared_mem_size = 2 * sizeof(float) * (QUERY_ROWS * EMBED_DIM + KV_ROWS * EMBED_DIM + BLOCK_DIM) + 
         sizeof(float) * QUERY_ROWS * KV_ROWS;
     
     // Need to increase shared memory size limit for the kernel
@@ -592,14 +621,13 @@ std::vector<torch::Tensor> calculate_attention_scores_cuda(torch::Tensor query, 
         value.data_ptr<float>(),
         max_rows.data_ptr<float>(),
         sum_rows.data_ptr<float>(),
-        output.data_ptr<float>(),
-        logsumexp.data_ptr<float>()
+        output.data_ptr<float>()
     );
 
-    return std::vector<torch::Tensor>{output, logsumexp};
+    return std::vector<torch::Tensor>{output, max_rows, sum_rows};
 }
 
-std::vector<torch::Tensor> calculate_attention_scores_backward_cuda(torch::Tensor query, torch::Tensor key, torch::Tensor value, torch::Tensor output, torch::Tensor d_output, torch::Tensor logexp){
+std::vector<torch::Tensor> calculate_attention_scores_backward_cuda(torch::Tensor query, torch::Tensor key, torch::Tensor value, torch::Tensor output, torch::Tensor d_output, torch::Tensor max_rows, torch::Tensor sum_rows){
         
     // Create output tensors
     auto d_query = torch::zeros_like(query);
@@ -611,7 +639,7 @@ std::vector<torch::Tensor> calculate_attention_scores_backward_cuda(torch::Tenso
 
     // Calculate grid and block dimensions
     dim3 threads(BLOCK_DIM, BLOCK_DIM);
-    dim3 blocks(MAX_SEQUENCE_LENGTH / BLOCK_DIM);
+    dim3 blocks(MAX_SEQUENCE_LENGTH / KV_ROWS_BACK);
 
     // Defining the shared memory requirements
     size_t shared_mem_size = sizeof(float) * (4 * (QUERY_ROWS_BACK + KV_ROWS_BACK) * EMBED_DIM + 3 * KV_ROWS_BACK * QUERY_ROWS_BACK);
@@ -633,7 +661,8 @@ std::vector<torch::Tensor> calculate_attention_scores_backward_cuda(torch::Tenso
         d_key.data_ptr<float>(),
         d_value.data_ptr<float>(),
         d_output.data_ptr<float>(),
-        logexp.data_ptr<float>(),
+        max_rows.data_ptr<float>(),
+        sum_rows.data_ptr<float>(),
         D.data_ptr<float>()
     );
 
