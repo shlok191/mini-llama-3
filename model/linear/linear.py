@@ -1,8 +1,7 @@
 import torch
 import torch.nn as nn
 from torch.autograd import Function
-from cuda_kernels import linear_forward, linear_backward_weights, linear_backward_inputs
-
+from mini_llama import linear_forward, linear_backward_weights, linear_backward_inputs
 
 class FunctionalLinear(Function):
     
