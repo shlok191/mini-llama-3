@@ -2,18 +2,70 @@ from setuptools import setup, find_packages
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 import os
 
-# Get CUDA_HOME
-cuda_home = os.getenv('CUDA_HOME', '/usr/local/cuda')
+def get_cuda_home():
+    """
+    Retrieves and validates CUDA home directory.
+    Raises informative error if CUDA is not properly configured.
+    """
+    cuda_home = os.getenv('CUDA_HOME', '/usr/local/cuda')
+    
+    if not os.path.exists(cuda_home):
+        
+        raise RuntimeError(
+            "CUDA_HOME environment variable is not set or CUDA is not installed. "
+            "Please install CUDA and set CUDA_HOME environment variable."
+        )
+        
+    return cuda_home
 
-# Check if CUDA is available
-if not os.path.exists(cuda_home):
-    raise RuntimeError(
-        "CUDA_HOME environment variable is not set or CUDA is not installed. "
-        "Please install CUDA and set CUDA_HOME environment variable."
+
+def get_cuda_extension():
+    """
+    Configures CUDA extension with appropriate compiler flags and source files.
+    Returns configured CUDAExtension object.
+    """
+    
+    cuda_home = get_cuda_home()
+    project_root = os.path.dirname(os.path.abspath(__file__))
+    
+    return CUDAExtension(
+        name='mini_llama.cuda',  # Note: Changed to submodule for better organization
+        sources=[
+            './cuda/bindings.cpp',
+            './cuda/embedding/embedding.cu',
+            './cuda/linear/linear.cu',
+            './cuda/attention/attention.cu'
+        ],
+        include_dirs=[
+            os.path.join(cuda_home, 'include'),
+            os.path.join(project_root, 'cuda'),  # Add cuda directory for header discovery
+            os.path.join(project_root, 'cuda/embedding'),  # Add specific module directories
+            os.path.join(project_root, 'cuda/linear'),
+            os.path.join(project_root, 'cuda/attention')
+        ],
+        extra_compile_args={
+            'cxx': [
+                '-O3',
+                '-std=c++17',
+                '-Wno-deprecated',
+                '-fopenmp'
+            ],
+            'nvcc': [
+                '-O3',
+                '--use_fast_math',
+                '-std=c++17',
+                '--ptxas-options=-v',
+                '-lineinfo',
+                '--expt-relaxed-constexpr',
+                '--expt-extended-lambda',
+                '-Xcompiler', '-fPIC',
+                '-gencode=arch=compute_86,code=sm_86'
+            ],
+        }
     )
-
+    
 setup(
-    # Basic package information
+    # Package metadata
     name="mini_llama",
     version="0.1.0",
     author="Shlok Sabarwal",
@@ -21,56 +73,19 @@ setup(
     description="Custom CUDA kernels for a Mini LLama Model!",
     long_description="A fast CUDA implementation for the Mini LLama Model with aim of having 80% speed compared to CuBLAS",
     
-    # Package configuration
-    packages=find_packages(),
+    # Package structure configuration
+    packages=find_packages(where="src"),  # Look for packages in src directory
+    package_dir={"": "src"},  # Tell setuptools packages are under src
     
-    # Extension module configuration
-    ext_modules=[
-        CUDAExtension(
-            name='mini_llama',  
-            sources=[
-                './bindings.cpp',     
-                './embedding/embedding.cu',           
-                './linear/linear.cu',   
-                './attention/attention.cu'    
-            ],
-            
-            # Include directories
-            include_dirs=[
-                os.path.join(cuda_home, 'include'),
-                'include'  # If you have a local include directory
-            ],
-            
-            # Extra compile arguments
-            extra_compile_args={
-                'cxx': [
-                    '-O3',                  # High optimization level
-                    '-std=c++17',          # C++ standard
-                    '-Wno-deprecated',      # Suppress deprecation warnings
-                    '-fopenmp'             # Enable OpenMP support
-                ],
-                'nvcc': [
-                    '-O3',                         # High optimization level
-                    '--use_fast_math',             # Use fast math operations
-                    '-std=c++17',                  # C++ standard
-                    '--ptxas-options=-v',          # Verbose PTXAS output
-                    '-lineinfo',                   # Include line information
-                    '--expt-relaxed-constexpr',
-                    '--expt-extended-lambda',
-                    '-Xcompiler', '-fPIC',         # Pass -fPIC to the host compiler
-                    '-gencode=arch=compute_86,code=sm_86'
-                ],
-
-            }
-        )
-    ],
+    # Extension modules (CUDA)
+    ext_modules=[get_cuda_extension()],
     
     # Build configuration
     cmdclass={
         'build_ext': BuildExtension
     },
     
-    # Python package dependencies
+    # Dependencies
     install_requires=[
         'torch>=2.4.0',
         'numpy==1.26.0'
@@ -78,9 +93,22 @@ setup(
     
     # Additional package data
     package_data={
-        'cuda_kernels': ['*.h']
+        'mini_llama': [
+            './model/*/*.h',
+            'py.typed',  # For type hint support
+            '**/*.pyi',  # Type stubs if you use them
+        ]
     },
     
     # Python version requirement
-    python_requires='>=3.7',
+    python_requires='>=3.10',
+    
+    # Additional classifiers for PyPI
+    classifiers=[
+        'Development Status :: 3 - Alpha',
+        'Intended Audience :: Science/Research',
+        'Programming Language :: Python :: 3',
+        'Programming Language :: C++',
+        'Topic :: Scientific/Engineering :: Artificial Intelligence',
+    ],
 )
