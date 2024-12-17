@@ -11,7 +11,7 @@ class RMSNorm(nn.Module):
         super().__init__()
         self.dim = dim
         self.eps = eps
-        self.scale = nn.Parameter(torch.ones(dim))  # Learnable scaling parameter
+        self.scale = nn.Parameter(torch.ones(dim)).to("cuda:0")  # Learnable scaling parameter
 
     def forward(self, x):
         """

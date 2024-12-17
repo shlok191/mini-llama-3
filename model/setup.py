@@ -41,7 +41,7 @@ def get_cuda_extension():
             os.path.join(project_root, 'cuda'),  # Add cuda directory for header discovery
             os.path.join(project_root, 'cuda/embedding'),  # Add specific module directories
             os.path.join(project_root, 'cuda/linear'),
-            os.path.join(project_root, 'cuda/attention')
+            os.path.join(project_root, 'cuda/attention'),
         ],
         extra_compile_args={
             'cxx': [

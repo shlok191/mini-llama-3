@@ -46,7 +46,7 @@ class RoPEmbedding(nn.Module):
         
         # Compute rotation angles for each position and frequency
         # Shape: (seq_len, dim//2)
-        angles = positions.unsqueeze(1) * self.inv_frequencies
+        angles = positions.unsqueeze(1) * self.inv_frequencies.cuda()
         
         # Compute sin and cos for the rotation
         sin = torch.sin(angles)  # (seq_len, dim//2)
@@ -60,6 +60,7 @@ class RoPEmbedding(nn.Module):
         # [cos θ, -sin θ]
         # [sin θ,  cos θ]
         rotated = torch.empty_like(x)
+        
         rotated[:, ::2] = x_even * cos - x_odd * sin    # Real part
         rotated[:, 1::2] = x_even * sin + x_odd * cos   # Imaginary part
         

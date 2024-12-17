@@ -16,7 +16,6 @@
 // This also maximizes active warps per SM!
 
 #define CHECK_CUDA(x) TORCH_CHECK(x.device().is_cuda(), #x " must be a CUDA tensor")
-#define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
 
 // Forward pass kernel implementation
 __global__ void linear_forward_kernel(
@@ -271,8 +270,6 @@ torch::Tensor linear_forward_cuda(
     // Ensure the inputs are on CUDA and are contiguous
     CHECK_CUDA(X);
     CHECK_CUDA(weights);
-    CHECK_CONTIGUOUS(X);
-    CHECK_CONTIGUOUS(weights);
 
     // Get dimensions
     const int sequence_length = X.size(0);
@@ -309,8 +306,6 @@ torch::Tensor linear_backward_weights_cuda(
     // Input validation
     CHECK_CUDA(grad_output);
     CHECK_CUDA(input_T);
-    CHECK_CONTIGUOUS(grad_output);
-    CHECK_CONTIGUOUS(input_T);
 
     // Get dimensions
     const int sequence_length = input_T.size(1);
@@ -356,8 +351,6 @@ torch::Tensor linear_backward_inputs_cuda(
     // Input validation
     CHECK_CUDA(grad_output);
     CHECK_CUDA(weights_T);
-    CHECK_CONTIGUOUS(grad_output);
-    CHECK_CONTIGUOUS(weights_T);
 
     // Get dimensions
     const int sequence_length = grad_output.size(0);

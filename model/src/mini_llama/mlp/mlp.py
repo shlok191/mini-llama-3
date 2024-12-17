@@ -1,16 +1,15 @@
 import torch
 import torch.nn as nn
-from mini_llama import Linear
+from mini_llama.linear import Linear
 
-class MLPLayer(nn.Module):
+class MLP(nn.Module):
     
-    def __init__(self, hidden_size: int, intermediate_size: int, bias: bool, activation_fn: nn.Module):
+    def __init__(self, hidden_size: int, intermediate_size: int, activation_fn: nn.Module):
         """Defines a custom MLP layer from the Llama paper
 
         Args:
             hidden_size (int: The hidden size of the logits
             intermediate_size (int): The output dimensions of the final gate
-            bias (bool): Whether or not to have bias values for the gates
             activation_fn (nn.Module): The activation function to use
         """
         super().__init__()
@@ -18,12 +17,11 @@ class MLPLayer(nn.Module):
         # Storing the given variables
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size
-        self.bias = bias
         
         # Utilizing the custom linear layers :)
-        self.gate_proj = Linear(self.hidden_size, self.intermediate_size, bias=bias)
-        self.up_proj = Linear(self.hidden_size, self.intermediate_size, bias=bias)
-        self.down_proj = Linear(self.hidden_size, self.intermediate_size, bias=bias)
+        self.gate_proj = Linear(self.hidden_size, self.intermediate_size).to("cuda:0")
+        self.up_proj = Linear(self.hidden_size, self.intermediate_size).to("cuda:0")
+        self.down_proj = Linear(self.intermediate_size, self.hidden_size).to("cuda:0")
         
         # The activation function (could be ReLU, LeakyReLU, orrrr SwiGLU?)
         self.activation_func = activation_fn

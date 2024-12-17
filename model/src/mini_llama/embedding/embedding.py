@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.autograd import Function
 import math
+from mini_llama.cuda import embedding_forward, embedding_backward
 
 class FunctionalEmbedding(Function):
     
