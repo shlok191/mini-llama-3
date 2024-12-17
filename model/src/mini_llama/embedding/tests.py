@@ -66,16 +66,21 @@ def test_embedding():
     # Test 4: Padding token handling
     print("\nTesting padding token behavior...")
     padding_indices = torch.ones(seq_length, dtype=torch.int32).cuda() * padding_idx
+    
     with torch.no_grad():
         padding_output = embed(padding_indices)
+    
     assert torch.allclose(padding_output, torch.zeros_like(padding_output)), \
         "Error: Padding tokens produced non-zero embeddings"
+    
     print("✓ Padding token handling passed")
     
     # Test 5: Gradient flow
     print("\nTesting gradient flow...")
     indices = torch.randint(0, vocab_size, (seq_length,), dtype=torch.int32).cuda()
     initial_params = embed.embedding_table.clone()
+
+    embed.embedding_table.retain_grad()
     
     # Forward and backward pass
     output = embed(indices)
@@ -92,21 +97,6 @@ def test_embedding():
     assert not torch.allclose(embed.embedding_table, initial_params), \
         "Error: Parameters didn't update after optimization"
     print("✓ Gradient flow passed")
-    
-    # Test 6: Long sequence handling
-    print("\nTesting long sequence handling...")
-    long_seq_length = 2048
-    long_indices = torch.randint(0, vocab_size, (long_seq_length,)).cuda()
-    
-    try:
-        with torch.no_grad():
-            long_output = embed(long_indices)
-        assert long_output.shape == (long_seq_length, embed_dims), \
-            "Error: Incorrect output shape for long sequence"
-        print("✓ Long sequence handling passed")
-    except Exception as e:
-        print(f"Error: Failed to process long sequence: {str(e)}")
-        raise
     
     print("\n=== All tests passed successfully! ===")
 

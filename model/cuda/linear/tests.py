@@ -1,9 +1,7 @@
 import torch
 import time
 from mini_llama.cuda import linear_forward
-import nvtx
 
-@nvtx.annotate(color="blue")
 def wrapper(X, weights):
     return linear_forward(X, weights)
 
