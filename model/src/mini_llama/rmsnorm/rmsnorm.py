@@ -11,7 +11,7 @@ class RMSNorm(nn.Module):
         super().__init__()
         self.dim = dim
         self.eps = eps
-        self.scale = nn.Parameter(torch.ones(dim)).to("cuda:0")  # Learnable scaling parameter
+        self.scale = nn.Parameter(torch.ones(dim, requires_grad=True), requires_grad=True).to("cuda:0")  # Learnable scaling parameter
 
     def forward(self, x):
         """
@@ -23,6 +23,7 @@ class RMSNorm(nn.Module):
         Returns:
             torch.Tensor: Normalized tensor of the same shape as input.
         """
+        
         # Compute the RMS of the input
         rms = torch.sqrt(torch.mean(x ** 2, dim=-1, keepdim=True) + self.eps)
         

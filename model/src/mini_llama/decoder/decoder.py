@@ -58,8 +58,9 @@ class DecoderLayer(nn.Module):
         
         # Self-attention block with residual connection
         norm_X = self.input_layer_norm(X).to("cuda:0")
+        
         X = X + self.attention(norm_X)
-                
+        
         # Having the output past through the feed forward layer
         norm_X = self.post_attn_norm(X).to("cuda:0")
         X = X + self.mlp(norm_X).to("cuda:0")

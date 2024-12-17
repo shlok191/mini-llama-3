@@ -34,7 +34,7 @@ class MiniLlamaModel(nn.Module):
         
         # Defining our custom embedding layer        
         self.embedding = Embedding(
-            num_embeddings=vocab_size,
+            vocab_size=vocab_size,
             embed_dims=embedding_dim,
             padding_token_index=padding_idx,
             init_method="xavier"
@@ -75,8 +75,8 @@ class MiniLlamaModel(nn.Module):
         # Pass through each decoder layer
         for layer in self.decoder_layers:
             hidden_states = layer(hidden_states)
-            
-        # Final normalization
+        
+        # # Final normalization
         hidden_states = self.norm(hidden_states)
         hidden_states = self.rope(hidden_states)
         
@@ -121,8 +121,8 @@ class MiniLlamaForCausalLM(nn.Module):
         self.lm_head = Linear(embedding_dim, vocab_size)
         
         # Weight tying
-        self.lm_head.weights = self.model.embed_tokens.embedding_table
-        
+        self.lm_head.weights = nn.Parameter(self.model.embedding.embedding_table.T)  
+              
     def forward(self, input_ids: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
         """Generates logits for each input ID
         
@@ -135,15 +135,16 @@ class MiniLlamaForCausalLM(nn.Module):
         """
         
         # First, we calculate the logits!
-        logits = self.lm_head(self.model(input_ids))
-    
+        logits = self.model(input_ids)
+        logits = self.lm_head(logits)
+        
         # If no labels provided, we simply return the logits
         if labels is None:
             return logits
             
         # Otherwise we compute the loss
         shift_logits = logits[..., :-1, :].contiguous()
-        shift_labels = labels[..., 1:].contiguous()
+        shift_labels = labels[..., 1:].to(dtype=torch.int64).contiguous()
         
         # Computing the cross entropy loss!
         loss_fct = nn.CrossEntropyLoss()
