@@ -88,7 +88,9 @@ setup(
     # Dependencies
     install_requires=[
         'torch>=2.4.0',
-        'numpy==1.26.0'
+        'numpy==1.26.0',
+        "lightning>=1.9",
+        "wandb"
     ],
     
     # Additional package data

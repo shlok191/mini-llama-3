@@ -1,11 +1,19 @@
+# Importing torch libraries
 import torch
 import torch.nn as nn
 
+# Importing custom layers
 from mini_llama.embedding import Embedding
 from mini_llama.rmsnorm import RMSNorm
 from mini_llama.rope import RoPEmbedding
 from mini_llama.decoder import DecoderLayer
 from mini_llama.linear import Linear
+
+# Importing PyTorch Lightning libraries
+import lightning as L
+import wandb
+from lightning.pytorch.loggers import WandbLogger
+from lightning.pytorch.callbacks import ModelCheckpoint
 
 class MiniLlamaModel(nn.Module):
     def __init__(
@@ -82,7 +90,7 @@ class MiniLlamaModel(nn.Module):
         
         return hidden_states
 
-class MiniLlamaForCausalLM(nn.Module):
+class MiniLlamaForCausalLM(L.LightningModule):  
     def __init__(
         self,
         vocab_size: int = 8192,
@@ -105,6 +113,16 @@ class MiniLlamaForCausalLM(nn.Module):
             padding_idx (int, optional): Token index for padding. Defaults to 1
         """
         super().__init__()
+        
+        # We will monitor all hyperparams except our model :)
+        self.save_hyperparameters(ignore=["model"])
+        
+        self.learning_rate = 5e-5
+        self.weight_decay = 1e-3
+        self.max_steps = 1e9
+        
+        # Letting the first 1000 steps involve warmup
+        self.warmup_steps = 1e-3
         
         # Main model
         self.model = MiniLlamaModel(
@@ -202,3 +220,93 @@ class MiniLlamaForCausalLM(nn.Module):
             current_sequence = torch.cat([current_sequence, next_token])
         
         return current_sequence
+    
+    def training_step(self, batch, batch_idx):
+        
+        # Processing the inputs to get our loss
+        inputs, labels = batch
+        loss = self.forward(inputs, labels)
+        
+        self.log("training_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log("learning_rate", self.optimizer.param_groups[0]['lr'], on_step=True)
+        
+        return loss
+    
+    def validation_step(self, batch, batch_idx):
+        
+        inputs, labels = batch
+        loss = self.forward(inputs, labels)
+        
+        # Calculate perplexity
+        perplexity = torch.exp(loss)
+        
+        # Log metrics
+        self.log("validation_loss", loss, on_epoch=True, prog_bar=True)
+        self.log("validation_perplexity", perplexity, on_epoch=True)
+        
+        # Store for epoch end validation
+        self.validation_step_outputs.append({"val_loss": loss, "val_perplexity": perplexity})
+        
+        # Generate sample text every N validation steps
+        if batch_idx == 0:
+            
+            # Take first sequence from batch as prompt
+            prompt = inputs[0][:50]  # Use first 50 tokens as prompt
+            
+            # Generate continuation
+            generated = self.generate(
+                prompt,
+                max_length=256,
+                temperature=1.0,
+                top_k=1
+            )
+            
+            # Logging the generated text
+            self.logger.experiment.log({
+                "generated_samples": wandb.Table(
+                    columns=["prompt", "generated"],
+                    data=[[prompt.tolist(), generated.tolist()]]
+                )
+            })
+        
+        return loss
+        
+        
+    def on_validation_epoch_end(self):
+        
+        # Calculating the mean loss and perplexity
+        avg_loss = torch.stack([x["val_loss"] for x in self.validation_step_outputs]).mean()
+        avg_ppl = torch.stack([x["val_perplexity"] for x in self.validation_step_outputs]).mean()
+        
+        # Log epoch-level metrics
+        self.log("validation_epoch_loss", avg_loss)
+        self.log("validation_epoch_perplexity", avg_ppl)
+        
+        # Clear saved outputs
+        self.validation_step_outputs.clear()
+        
+    def configure_optimizers(self):
+        
+        # Creating and AdamW optimizer
+        optimizer = torch.optim.AdamW(
+            self.model.parameters(),
+            lr=self.learning_rate,
+            weight_decay=self.weight_decay,
+            betas=(0.9, 0.95)  # Using betas recommended for LLMs
+        )
+        
+        # Creating a scheduler with Cosine Annealing to update the LR as we go through
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=self.max_steps - self.warmup_steps,
+            eta_min=self.learning_rate * 0.1
+        )
+        
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "step", 
+                "frequency": 1
+            }
+        }

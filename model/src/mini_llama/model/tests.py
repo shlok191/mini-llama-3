@@ -113,6 +113,48 @@ def test_model():
         
         print("✓ Backward pass and gradient flow test passed")
     
+    def test_save_and_load(model, config):
+        """Tests if the model can be saved and loaded correctly while maintaining its state"""
+    
+        print("\nTesting model saving and loading...")
+        
+        import os
+        
+        # Create a test input to compare outputs
+        seq_length = 256
+        test_input = torch.randint(0, config['vocab_size'], 
+                                (seq_length,), 
+                                dtype=torch.int32,
+                                device='cuda')
+        
+        # Get output from original model
+        with torch.no_grad():
+            original_output = model(test_input, labels=None)
+        
+        # Save the model
+        save_path = "test_model_save.pt"
+        torch.save(model.state_dict(), save_path)
+        
+        # Create a new model instance and load the saved weights
+        loaded_model = MiniLlamaForCausalLM(**config)
+        loaded_model.load_state_dict(torch.load(save_path, weights_only=True))
+        
+        loaded_model = loaded_model.cuda() 
+        
+        # Get output from loaded model
+        with torch.no_grad():
+            loaded_output = loaded_model(test_input, labels=None)
+        
+        # Compare outputs
+        if not torch.allclose(original_output, loaded_output, atol=1e-5):
+            raise ValueError("Loaded model produces different outputs")
+        
+        # Clean up the saved file
+        os.remove(save_path)
+    
+        print("✓ Model save/load test passed")
+
+
     try:
         
         # Initialize model with default configuration
@@ -124,6 +166,7 @@ def test_model():
         # Run all tests in sequence
         test_forward_shape(model, config)
         test_backward_pass(model)
+        test_save_and_load(model, config)
         
         print("\n=== All model tests passed successfully! ===")
         
