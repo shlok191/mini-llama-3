@@ -18,7 +18,7 @@ from lightning.pytorch.callbacks import ModelCheckpoint
 class MiniLlamaModel(nn.Module):
     def __init__(
         self,
-        vocab_size: int=8192,
+        vocab_size: int=16384,
         embedding_dim: int = 1024,
         num_decoder_layers: int = 4,
         num_attn_heads: int = 4,

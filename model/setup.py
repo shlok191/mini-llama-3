@@ -89,19 +89,18 @@ setup(
     install_requires=[
         'torch>=2.4.0',
         'numpy==1.26.0',
-        "lightning>=1.9",
-        "wandb"
+        "lightning>=1.9", # For checkpointing and connecting to W&B  
+        "wandb>=0.19.0",  # For visualizing training statistics :)
+        "tqdm>=4.6.0"     # Adds fancy progress bars
     ],
     
     # Additional package data
     package_data={
         'mini_llama': [
-            './model/*/*.h',
-            'py.typed',  # For type hint support
-            '**/*.pyi',  # Type stubs if you use them
+            './*/*.json',
         ]
     },
-    
+    include_package_data=True,
     # Python version requirement
     python_requires='>=3.10',
     

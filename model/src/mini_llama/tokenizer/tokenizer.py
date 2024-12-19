@@ -2,17 +2,133 @@ from collections import defaultdict
 import re
 from typing import List, Dict, Tuple, Optional
 import json
+from tqdm.auto import tqdm
 
-class MiniLlamaTokenizer:
+from collections import defaultdict
+from multiprocessing import Pool, cpu_count
+from tqdm import tqdm
+from functools import partial
+
+class ParallelBPETrainer:
     
+    def __init__(self, vocab_size, iterations, word_freqs):
+        self.vocab_size = vocab_size
+        self.iterations = iterations
+        self.word_freqs = word_freqs
+        self.merges = {}
+        self.string_to_tokens = {}
+        self.tokens_to_string = {}
+        self.num_processes = cpu_count() - 1 or 1
+
+    @staticmethod
+    def get_pairs_for_chunk(word_freq_items):
+        """Calculate pair frequencies for a chunk of words"""
+        
+        pairs = defaultdict(int)
+        
+        for word, freq in word_freq_items:
+            symbols = word.split()
+        
+            for i in range(len(symbols) - 1):
+                pairs[symbols[i], symbols[i + 1]] += freq
+        
+        return dict(pairs)
+
+    def merge_pair_in_word(self, pair, word, freq):
+        """Merge a given pair in a single word"""
+        
+        parts = word.split()
+        i = 0
+        
+        while i < len(parts) - 1:
+        
+            if (parts[i], parts[i + 1]) == pair:
+                parts[i:i + 2] = [''.join(pair)]
+        
+            else:
+                i += 1
+        
+        return ' '.join(parts), freq
+
+    def parallel_get_pair_frequencies(self, word_freqs):
+        """Calculate pair frequencies in parallel"""
+        
+        # Split word_freqs into chunks for each process
+        items = list(word_freqs.items())
+        chunk_size = max(1, len(items) // self.num_processes)
+        chunks = [items[i:i + chunk_size] for i in range(0, len(items), chunk_size)]
+
+        # Process chunks in parallel
+        with Pool(self.num_processes) as pool:
+            chunk_results = pool.map(self.get_pairs_for_chunk, chunks)
+
+        # Combine results from all chunks
+        combined_pairs = defaultdict(int)
+        
+        for chunk_pairs in chunk_results:
+            for pair, freq in chunk_pairs.items():
+                combined_pairs[pair] += freq
+
+        return combined_pairs
+
+    def parallel_merge_tokens(self, best_pair, word_freqs):
+        """Merge tokens in parallel"""
+        items = list(word_freqs.items())
+        
+        chunk_size = max(1, len(items) // self.num_processes)
+        chunks = [items[i:i + chunk_size] for i in range(0, len(items), chunk_size)]
+
+        # Process chunks in parallel
+        merge_func = partial(self.merge_pair_in_word, best_pair)
+        
+        with Pool(self.num_processes) as pool:
+            merged_chunks = pool.starmap(merge_func, items)
+
+        return dict(merged_chunks)
+
+    def train(self):
+        """Train the BPE tokenizer using parallel processing"""
+        # Convert words to space-separated character sequences
+        word_freqs = {' '.join(word): freq for word, freq in self.word_freqs.items()}
+
+        for i in tqdm(range(self.iterations), desc='🏴‍☠️ Training the BPE Tokenizer...', colour='green'):
+            # Get pair frequencies in parallel
+            pairs = self.parallel_get_pair_frequencies(word_freqs)
+            
+            if not pairs:
+                break
+
+            # Finding the most frequent pair
+            most_freq = max(pairs.items(), key=lambda x: x[1])
+            best_pair = most_freq[0]
+
+            # Merging the pair in parallel
+            word_freqs = self.parallel_merge_tokens(best_pair, word_freqs)
+
+            # Update vocabulary
+            self.merges[best_pair] = ''.join(best_pair)
+            self.string_to_tokens[''.join(best_pair)] = len(self.tokens_to_string)
+            self.tokens_to_string[len(self.tokens_to_string)] = ''.join(best_pair)
+
+            # Check vocabulary size
+            if len(self.string_to_tokens) >= self.vocab_size:
+                print(f"Reached maximum vocabulary size: {self.vocab_size}")
+                break
+
+            if (i + 1) % 1000 == 0:
+                print(f"Completed {i + 1} merges. Vocabulary size: {len(self.string_to_tokens)}")
+
+        return self.merges, self.string_to_tokens, self.tokens_to_string
+    
+class MiniLlamaTokenizer:
     """This is a simplified implementation of the Mini-LLama Tokenizer. I am using Byte-Pair encoding as
-    suggested by the sentencepiece paper from Google with iterations=5.
+    suggested by the sentencepiece paper from Google with iterations=2048.
     
     If time permits, I will use concurrency to parallelize the process of counting adjacent tokens as well!
     """
     
-    def __init__(self, text_corpus: Optional[List[str]], iterations: int, vocab_size: int = 12400):
-        """ Initializes and trains the tokenizer on the given texts for [iterations] iterations
+    def __init__(self, text_corpus: Optional[List[str]], iterations: int, vocab_size: int = 8192):
+        """Initializes and trains the tokenizer on the given texts for [iterations] iterations
 
         Args:
             text_corpus (Optional[List[str]]): A list of texts or None (None in case of loading tokenizer)
@@ -33,32 +149,34 @@ class MiniLlamaTokenizer:
         
         # Defining some helpful special tokens!
         self.special_tokens = ["<padding>", "<begin_of_sentence>", "<end_of_sentence>",
-            "<unknown>", "<assistant>", "<human>", "</w>"]
+            "<unknown>", "</w>"]
 
         # Initializing the vocabulary with all of basic english characters + </w> special token
-        for key in self.special_tokens:
+        for token in self.special_tokens:
             
-            self.string_to_tokens[key] = len(self.string_to_tokens)
-            self.tokens_to_string[len(self.tokens_to_string)] = key
+            self.string_to_tokens[token] = len(self.string_to_tokens)
+            self.tokens_to_string[len(self.tokens_to_string)] = token
         
-        if text_corpus is not None:
-            for text in text_corpus:
+        # Adding some basic tokens!
+        for c in 'abcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+-=[]{}|;:,.<>?/':
+            
+            if c not in self.string_to_tokens:
                 
-                # Splitting the text into individual letter
+                self.string_to_tokens[c] = len(self.string_to_tokens)
+                self.tokens_to_string[len(self.tokens_to_string)] = c
+            
+        if text_corpus is not None:
+            
+            # Processing the corpus to build initial word frequencies
+            for text in tqdm(text_corpus, colour='green', desc='🏴‍☠️ Building The BPE Tokenizer...'):
+                
                 words = text.lower().strip().split()
                 
                 for word in words:
-                    
-                    if word + "</w>" in self.string_to_tokens:
-                        continue
-                    
-                    # Adding a token to identify the end of word
-                    word = word + "</w>" 
-                    self.word_freqs[word] += 1
-                    
-                    self.string_to_tokens[word] = len(self.string_to_tokens)
-                    self.tokens_to_string[len(self.tokens_to_string)] = word
-                    
+                
+                    # Counting the word frequencies but not adding to the vocabulary yet
+                    self.word_freqs[word + "</w>"] += 1
+        
     def merge_tokens(self, pair: Tuple[str, str], word_frequency: Dict[str, int]) -> Dict[str, int]:
         """Merges all of the token pairs with the highest adjacency frequency counts
 
@@ -93,45 +211,21 @@ class MiniLlamaTokenizer:
         # Convert words to space-separated character sequences
         word_freqs = {' '.join(word): freq for word, freq in self.word_freqs.items()}
         
-        for i in range(self.iterations):
-
-            # Get pair frequencies
-            pairs = defaultdict(int)
+        # Defining a trainer to parallelize this task
+        trainer = ParallelBPETrainer(
+            vocab_size=self.vocab_size,
+            iterations=self.iterations,
+            word_freqs=word_freqs
+        )
         
-            for word, freq in word_freqs.items():
-                
-                # Taking everything by each space-separated unit -- initially alphabet, combines into larger tokens :) 
-                symbols = word.split()
-                
-                # Adding up the frequency for all adjacent words
-                for i in range(len(symbols) - 1):
-                    pairs[symbols[i], symbols[i + 1]] += freq
-                    
-            if not pairs:
-                break
-                
-            # Finding the most frequent pair on the basis of the frequencies
-            most_freq = max(pairs.items(), key=lambda x: x[1])
-            best_pair = most_freq[0]
-            
-            
-            # Merging the pair in our vocabulary
-            word_freqs = self.merge_tokens(best_pair, word_freqs)
-            self.merges[best_pair] = ''.join(best_pair)
-            
-            # Adding in the new token!
-            self.string_to_tokens[''.join(best_pair)] = len(self.tokens_to_string)
-            self.tokens_to_string[len(self.tokens_to_string)] = ''.join(best_pair)
-            
-            # Stopping when we reach the maximum amount of tokens allocable
-            if len(self.string_to_tokens) >= self.vocab_size:
-            
-                print(f"Reached maximum vocabulary size: {self.vocab_size}")
-                break
+        # Beginning parallel training
+        merges, string_to_tokens, tokens_to_string = trainer.train()
         
-            if (i + 1) % 1000 == 0:
-                print(f"Completed {i + 1} merges. Vocabulary size: {len(self.string_to_tokens)}")
-
+        # Storing everything into object instance
+        self.merges = merges
+        self.string_to_tokens = string_to_tokens
+        self.tokens_to_string = tokens_to_string
+        
     def encode(self, text: str) -> List[int]:
         """Converts the given text into a series of token IDs
 
@@ -210,13 +304,12 @@ class MiniLlamaTokenizer:
         
         # Defining a dictionary to store the associated values
         save_dict = {
-            'string_to_tokens': list(self.string_to_tokens.keys()), # Storing the string
-            'tokens_to_string': list(self.tokens_to_string.values()), # Storing the tokens
-            'merges': {' '.join(key): value for key, value in self.merges.items()}, # Ensures mergables are space-separated strings
+            'string_to_tokens': self.string_to_tokens,  # Store complete dictionary
+            'tokens_to_string': {str(k): v for k, v in self.tokens_to_string.items()},  # Convert int keys to str for JSON
+            'merges': {' '.join(key): value for key, value in self.merges.items()},
             'special_tokens': self.special_tokens
         }
-        
-        # Storing the file in UTF-8 format to ensure broad character support
+    
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(save_dict, f)
     
@@ -238,16 +331,18 @@ class MiniLlamaTokenizer:
         tokenizer = MiniLlamaTokenizer(None, iterations=0)
         
         # Saving the respective dictionaries
-        tokenizer.string_to_tokens = {value: token for token, value in enumerate(data['string_to_tokens'])}
-        tokenizer.tokens_to_string = {token: value for token, value in enumerate(data['tokens_to_string'])}
-        
+        tokenizer.string_to_tokens = data['string_to_tokens']
+        tokenizer.tokens_to_string = {int(k): v for k, v in data['tokens_to_string'].items()}
+    
         tokenizer.merges = {tuple(key.split()): value for key, value in data['merges'].items()}
         tokenizer.special_tokens = data['special_tokens']
         
         return tokenizer
 
     def example_usage():
+        
         # Example texts
+        
         texts = [
             "Savvy? Not all treasure is silver and gold, mate.",
             "Why is the rum always gone?",
@@ -272,13 +367,15 @@ class MiniLlamaTokenizer:
 
 if __name__ == "__main__":
     
-    tokenizer = MiniLlamaTokenizer.example_usage()
+    # tokenizer = MiniLlamaTokenizer.example_usage()
     
-    print("-" * 50)
-    print("Beginning saving and loading: \n")
+    # print("-" * 50)
+    # print("Beginning saving and loading: \n")
     
-    tokenizer.save("tokenizer.json")
+    # tokenizer.save("tokenizer.json")
+    
     tokenizer = MiniLlamaTokenizer.load(path="tokenizer.json")
+    print(tokenizer.string_to_tokens.__len__())
     
     encoded_tokens = tokenizer.encode("Why is the rum gone?")
     print(f"Encoded tokens: {encoded_tokens}")
