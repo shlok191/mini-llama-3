@@ -1,5 +1,7 @@
 from setuptools import setup, find_packages
 from torch.utils.cpp_extension import BuildExtension, CUDAExtension
+from setuptools_rust import RustExtension, Binding
+
 import os
 
 def get_cuda_home():
@@ -63,27 +65,43 @@ def get_cuda_extension():
             ],
         }
     )
-    
+
+def get_rust_extension():
+    """Creates the RustExtension object necessary for adding support for the Rust Tokenizer
+
+    Returns:
+        RustExtension: RustExtension with metadata for the tokenizer
+    """
+
+    return RustExtension(
+        "mini_llama.tokenizer.rust_tokenizer",
+        "src/tokenizers/rust_tokenizer/Cargo.toml",
+        binding=Binding.PyO3
+    )
+
 setup(
     # Package metadata
     name="mini_llama",
     version="0.1.0",
     author="Shlok Sabarwal",
     author_email="ssabarwal@wisc.edu",
-    description="Custom CUDA kernels for a Mini LLama Model!",
-    long_description="A fast CUDA implementation for the Mini LLama Model with aim of having 80% speed compared to CuBLAS",
+    description="Custom CUDA kernels for a Pirate Story Telling LLM along with a Rust Tokenizer and training code! :)",
+    long_description="A fast CUDA implementation for the Mini LLama Model with aim of having 90% speed compared to CuBLAS",
     
     # Package structure configuration
     packages=find_packages(where="src"),  # Look for packages in src directory
     package_dir={"": "src"},  # Tell setuptools packages are under src
     
-    # Extension modules (CUDA)
-    ext_modules=[get_cuda_extension()],
+    # Extension modules for CUDA & Rust
+    #ext_modules=[get_cuda_extension()],
+    rust_extensions=[get_rust_extension()],
     
     # Build configuration
     cmdclass={
         'build_ext': BuildExtension
     },
+    
+    setup_requires=["setuptools-rust>=1.5.2"],
     
     # Dependencies
     install_requires=[

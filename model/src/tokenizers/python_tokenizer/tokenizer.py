@@ -11,13 +11,15 @@ from functools import partial
 
 class ParallelBPETrainer:
     
-    def __init__(self, vocab_size, iterations, word_freqs):
+    def __init__(self, vocab_size, iterations, word_freqs, merges, string_to_tokens, tokens_to_string):
+        
         self.vocab_size = vocab_size
         self.iterations = iterations
         self.word_freqs = word_freqs
-        self.merges = {}
-        self.string_to_tokens = {}
-        self.tokens_to_string = {}
+        self.merges = merges
+        self.string_to_tokens = string_to_tokens
+        self.tokens_to_string = tokens_to_string
+        
         self.num_processes = cpu_count() - 1 or 1
 
     @staticmethod
@@ -88,10 +90,12 @@ class ParallelBPETrainer:
 
     def train(self):
         """Train the BPE tokenizer using parallel processing"""
+        
         # Convert words to space-separated character sequences
         word_freqs = {' '.join(word): freq for word, freq in self.word_freqs.items()}
 
         for i in tqdm(range(self.iterations), desc='🏴‍☠️ Training the BPE Tokenizer...', colour='green'):
+        
             # Get pair frequencies in parallel
             pairs = self.parallel_get_pair_frequencies(word_freqs)
             
@@ -158,7 +162,7 @@ class MiniLlamaTokenizer:
             self.tokens_to_string[len(self.tokens_to_string)] = token
         
         # Adding some basic tokens!
-        for c in 'abcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+-=[]{}|;:,.<>?/':
+        for c in 'abcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+-=[]{}|;:,.<>?/\'\"':
             
             if c not in self.string_to_tokens:
                 
@@ -176,7 +180,8 @@ class MiniLlamaTokenizer:
                 
                     # Counting the word frequencies but not adding to the vocabulary yet
                     self.word_freqs[word + "</w>"] += 1
-        
+                    
+                    
     def merge_tokens(self, pair: Tuple[str, str], word_frequency: Dict[str, int]) -> Dict[str, int]:
         """Merges all of the token pairs with the highest adjacency frequency counts
 
@@ -215,7 +220,10 @@ class MiniLlamaTokenizer:
         trainer = ParallelBPETrainer(
             vocab_size=self.vocab_size,
             iterations=self.iterations,
-            word_freqs=word_freqs
+            word_freqs=word_freqs,
+            merges=self.merges,
+            string_to_tokens=self.string_to_tokens,
+            tokens_to_string=self.tokens_to_string
         )
         
         # Beginning parallel training
@@ -226,75 +234,125 @@ class MiniLlamaTokenizer:
         self.string_to_tokens = string_to_tokens
         self.tokens_to_string = tokens_to_string
         
-    def encode(self, text: str) -> List[int]:
-        """Converts the given text into a series of token IDs
-
-        Args:
-            text (str): The text to convert to a list of tokens
-
-        Returns:
-            List[int]: The list of tokens!
-        """
+    def encode(self, text: str, max_length: int = 1024, truncation: bool = False) -> List[int]:
+        """Optimized version of the encoder"""
         
-        # Splitting everything into words and adding the BOS and EOS tokens
-        words = text.lower().strip().split()
+        # Pre-compile regex patterns for common operations
+        
+        if not hasattr(self, '_split_pattern'):
+            self._split_pattern = re.compile(r'\s+')
+        
+        # Pre-fetch commonly used token IDs
+        
+        if not hasattr(self, '_common_tokens'):
+        
+            self._common_tokens = {
+                'bos': self.string_to_tokens['<begin_of_sentence>'],
+                'eos': self.string_to_tokens['<end_of_sentence>'],
+                'unk': self.string_to_tokens['<unknown>'],
+            }
+        
+        # Process text in batches
+        words = self._split_pattern.split(text.lower().strip())
+        
         encoded = []
         
+        # Create a cache for processed subwords
+        if not hasattr(self, '_word_cache'):
+            self._word_cache = {}
+        
+        # Process each word
         for word in words:
-            
-            word = word + "</w>"
-            word = ' '.join(list(word))
-            
+        
+            # Check cache first
+            cache_key = word + "</w>"
+        
+            if cache_key in self._word_cache:
+                encoded.extend(self._word_cache[cache_key])
+                continue
+                
+            # Process new word
+            current = ' '.join(list(cache_key))
+        
             while True:
-                
-                # Trying to apply merges
+        
+                # Try to apply merges efficiently
                 changed = False
-                
+        
                 for pair, merge in self.merges.items():
-                
-                    if ' '.join(pair) in word:
-                        
-                        word = word.replace(' '.join(pair), merge)
+                    pair_str = ' '.join(pair)
+                    
+                    if pair_str in current:
+                        current = current.replace(pair_str, merge)
                         changed = True
                         break
-                    
+                
                 if not changed:
                     break
             
-            # Convert to token IDs
-            for string in word.split():
-                
-                if string in self.string_to_tokens:
-                    encoded.append(self.string_to_tokens[string])
-                
-                else:
-                    encoded.append(self.string_to_tokens["<unknown>"])
+            # Convert to token IDs efficiently
+            tokens = []
+            
+            for string in current.split():
+                tokens.append(
+                    self.string_to_tokens.get(string, self._common_tokens['unk'])
+                )
+            
+            # Cache the result
+            self._word_cache[cache_key] = tokens
+            encoded.extend(tokens)
         
-        return [self.string_to_tokens['<begin_of_sentence>']] + encoded + [self.string_to_tokens['<end_of_sentence>']]
-    
-    def decode(self, token_ids: List[int]) -> str:
-        """Convert a list of token IDs back into a string
+        # Handle truncation if needed
+        if truncation and len(encoded) > max_length - 2:
+            encoded = encoded[:max_length - 2]
+        
+        # Add BOS and EOS tokens
+        return [self._common_tokens['bos']] + encoded + [self._common_tokens['eos']]
 
+    def clear_cache(self):
+        """Clear the word cache if needed"""
+        if hasattr(self, '_word_cache'):
+            self._word_cache.clear()
+            
+    def decode(self, token_ids: List[int]) -> str:
+        """Convert a list of token IDs back into a string efficiently
+        
         Args:
             token_ids (List[int]): The list of token IDs to convert
-
+            
         Returns:
             str: The decoded string
         """
+        # Pre-fetch special tokens if not already cached
+        if not hasattr(self, '_special_tokens_set'):
+            self._special_tokens_set = {"<padding>", "<begin_of_sentence>", "<end_of_sentence>"}
         
+        # Pre-allocate list with estimated size
         text = []
+        text_append = text.append  # Local reference for faster append
         
+        # Process tokens more efficiently
         for token in token_ids:
-                
-            if token in self.tokens_to_string:
-                text.append(self.tokens_to_string[token])
+            # Use get() with default value instead of multiple checks
+            token_string = self.tokens_to_string.get(token, "<unknown>")
             
-            else:
-                text.append("<unknown>")              
+            # Skip special tokens efficiently using set lookup
+            if token_string in self._special_tokens_set:
+                continue
+                
+            text_append(token_string)
         
-        text = ''.join(text).replace('</w>', ' ').strip()
-        return text
-    
+        # Join and process the final string efficiently
+        if not text:
+            return ""
+            
+        # Fast string joining and </w> replacement
+        result = "".join(text)
+        if "</w>" in result:
+            result = result.replace("</w>", " ")
+        
+        return result.strip()
+        
     def save(self, path: str) -> None:
         """Save the tokenizer properties in a JSON file
 

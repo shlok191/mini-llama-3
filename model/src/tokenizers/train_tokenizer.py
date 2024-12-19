@@ -1,8 +1,8 @@
-from mini_llama.tokenizer import MiniLlamaTokenizer
+from mini_llama.tokenizer.rust_tokenizer import MiniLlamaTokenizer
 import json
 from typing import List
 
-def load_pirate_stories(path: str = "/root/mini-llama-3/dataset/pirate_stories_train.jsonl") -> List[str]:
+def load_pirate_stories(path: str = "/Users/sabarwal/work/projects/mini-llama-3/dataset/pirate_stories_train.jsonl") -> List[str]:
     """Loads the TinyStories - pirated version :)
     
     Args:
@@ -25,19 +25,14 @@ def load_pirate_stories(path: str = "/root/mini-llama-3/dataset/pirate_stories_t
             story = json.loads(line)
             
             # Maintaining some of the original text :)
-            if count % 4 == 0:
-                stories.append(story['original'])
+            # if count % 10 == 0:
+            #     stories.append(story['original'])
                 
             stories.append(story['pirate'])
             
-            count += 1
-            
-            if count == 20000:
-                break
-            
     return stories
 
-def train_tokenizer(stories: list, vocab_size: int = 8192, iterations: int = 8000) -> MiniLlamaTokenizer:
+def train_tokenizer(stories: list, vocab_size: int = 512, iterations: int = 440) -> MiniLlamaTokenizer:
     """Trains our custom BPE tokenizer on the dataset provided
     
     Args:
@@ -52,16 +47,16 @@ def train_tokenizer(stories: list, vocab_size: int = 8192, iterations: int = 800
     print(f"\nTraining tokenizer with vocab size {vocab_size} and {iterations} iterations...")
     
     # Defining a tokenizer object
-    tokenizer = MiniLlamaTokenizer(stories, iterations=iterations, vocab_size=vocab_size)
+    tokenizer = MiniLlamaTokenizer(vocab_size=vocab_size, iterations=iterations)
     
     # Training!
-    tokenizer.train()
+    tokenizer.train(stories)
     
     return tokenizer
 
 def test_tokenizer(
         tokenizer: MiniLlamaTokenizer,
-        validation_path: str = "/root/mini-llama-3/dataset/pirate_stories_validation.jsonl",
+        validation_path: str = "/Users/sabarwal/work/projects/mini-llama-3/dataset/pirate_stories_validation.jsonl",
         num_samples: int = 3) -> None:
     """Tests the tokenizer on some sample stories
     
@@ -104,7 +99,7 @@ if __name__ == "__main__":
     test_tokenizer(tokenizer)
     
     # # Save tokenizer
-    save_path = "pirate_tokenizer.json"
+    save_path = "pirate_tokenizer_2K.json"
     
     print(f"\nSaving tokenizer to {save_path}")
     tokenizer.save(save_path)
