@@ -24,15 +24,17 @@ def load_pirate_stories(path: str = "/Users/sabarwal/work/projects/mini-llama-3/
             
             story = json.loads(line)
             
-            # Maintaining some of the original text :)
-            # if count % 10 == 0:
-            #     stories.append(story['original'])
-                
-            stories.append(story['pirate'])
+            # Maintaining only 50% of the original text since we use more Pirate-Speak :)
+            if count % 2 == 0:
+                stories.append(story['original'])
             
+            stories.append(story['pirate'])
+
+            count += 1
+        
     return stories
 
-def train_tokenizer(stories: list, vocab_size: int = 512, iterations: int = 440) -> MiniLlamaTokenizer:
+def train_tokenizer(stories: list, vocab_size: int = 8192, iterations: int = 8192 - 98) -> MiniLlamaTokenizer:
     """Trains our custom BPE tokenizer on the dataset provided
     
     Args:
@@ -56,7 +58,7 @@ def train_tokenizer(stories: list, vocab_size: int = 512, iterations: int = 440)
 
 def test_tokenizer(
         tokenizer: MiniLlamaTokenizer,
-        validation_path: str = "/Users/sabarwal/work/projects/mini-llama-3/dataset/pirate_stories_validation.jsonl",
+        validation_path: str = "/Users/sabarwal/work/projects/mini-llama-3/dataset/pirate_stories_train.jsonl",
         num_samples: int = 3) -> None:
     """Tests the tokenizer on some sample stories
     
@@ -75,13 +77,13 @@ def test_tokenizer(
     for i, text in enumerate(test_texts[:num_samples]):
         
         print(f"\nSample {i+1}:")
-        print(f"Original: {text}")
+        print(f"\nOriginal: {text}")
         
         encoded = tokenizer.encode(text)
-        print(f"Encoded: {encoded[:10]}... (length: {len(encoded)})")
+        print(f"\nEncoded: {encoded[:10]}... (length: {len(encoded)})")
         
         decoded = tokenizer.decode(encoded)
-        print(f"Decoded: {decoded}")
+        print(f"\nDecoded: {decoded}")
 
         # Allowing for proper demarcations
         print(f"{'=' * 100}")
@@ -98,8 +100,8 @@ if __name__ == "__main__":
     # Test it
     test_tokenizer(tokenizer)
     
-    # # Save tokenizer
-    save_path = "pirate_tokenizer_2K.json"
+    # Save tokenizer
+    save_path = "pirate_tokenizer_8K.json"
     
     print(f"\nSaving tokenizer to {save_path}")
     tokenizer.save(save_path)
@@ -108,6 +110,4 @@ if __name__ == "__main__":
     print("\nVerifying loaded tokenizer:")
     
     loaded_tokenizer = MiniLlamaTokenizer.load(save_path)
-    print(len(loaded_tokenizer.string_to_tokens))
-    
     test_tokenizer(loaded_tokenizer)
