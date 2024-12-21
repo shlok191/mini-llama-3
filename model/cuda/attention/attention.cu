@@ -6,18 +6,24 @@
 #include <iostream>
 
 // Each CUDA stream handles one attention head!
-#define NUM_HEADS 4
 #define EMBED_DIM 256
+#define NUM_HEADS 4
 
-std::vector<torch::Tensor> split_matrices(torch::Tensor input){
+std::vector<torch::Tensor> split_matrices(torch::Tensor input, const int batch_size){
     
     // This stores each 256 embedding dimension tensor
     std::vector<torch::Tensor> split_matrices;
     
-    for(int i = 0; i < NUM_HEADS; i++){
+    for(int b = 0; b < batch_size; b++){
 
-        auto split = input.slice(1, i * EMBED_DIM, (i + 1) * EMBED_DIM).clone();
-        split_matrices.push_back(split);
+        // Fetching the batch tensor
+        auto batch_tensor = input.select(0, b);
+
+        for(int i = 0; i < NUM_HEADS; i++){
+
+            auto split = batch_tensor.slice(1, i * EMBED_DIM, (i + 1) * EMBED_DIM).clone();
+            split_matrices.push_back(split);
+        }
     }
 
     return split_matrices;
@@ -26,12 +32,19 @@ std::vector<torch::Tensor> split_matrices(torch::Tensor input){
 std::vector<torch::Tensor> split_vectors(torch::Tensor input) {
 
     std::vector<torch::Tensor> split_vectors;
-    auto batch_size = input.size(0);
     
-    for(int i = 0; i < batch_size; i++) {
+    auto batch_size = input.size(0);
 
-        auto split = input.select(0, i).clone();
-        split_vectors.push_back(split);
+    for(int b = 0; b < batch_size; b++) {
+
+        // Fetching the batch tensor
+        auto batch_tensor = input.select(0, b);
+
+        for(int i = 0; i < NUM_HEADS; i++) {
+
+            auto split = batch_tensor.select(0, i).clone();
+            split_vectors.push_back(split);
+        }
     }
 
     return split_vectors;
@@ -63,15 +76,15 @@ std::vector<torch::Tensor> split_vectors(torch::Tensor input) {
 #define BLOCK_DIM 32
 #define QUERY_ROWS 32
 #define KV_ROWS 16
-#define MAX_SEQUENCE_LENGTH 512
+#define MAX_SEQUENCE_LENGTH 256
 
 __global__ void calculate_attention_scores(
-    const float* query,  // Shape: [SEQUENCE LENGTH][EMBED DIM]
-    const float* key,    // Shape: [SEQUENCE LENGTH][EMBED DIM]
-    const float* value,  // Shape: [SEQUENCE LENGTH][EMBED DIM]
-    float* max_rows,     // Shape: [SEQUENCE LENGTH] 
-    float* sum_rows,     // Shape: [SEQUENCE LENGTH]
-    float* output        // Shape: [SEQUENCE LENGTH][EMBED DIM]
+    const float* query,  // Shape: [BATCH SIZE][SEQUENCE LENGTH][EMBED DIM]
+    const float* key,    // Shape: [BATCH SIZE][SEQUENCE LENGTH][EMBED DIM]
+    const float* value,  // Shape: [BATCH SIZE][SEQUENCE LENGTH][EMBED DIM]
+    float* max_rows,     // Shape: [BATCH SIZE][SEQUENCE LENGTH] 
+    float* sum_rows,     // Shape: [BATCH SIZE][SEQUENCE LENGTH]
+    float* output        // Shape: [BATCH SIZE][SEQUENCE LENGTH][EMBED DIM]
 ){
     
     /****************************************************************
@@ -94,6 +107,13 @@ __global__ void calculate_attention_scores(
     float* softmax_sum = &shared_memory[2 * (QUERY_ROWS * EMBED_DIM + KV_ROWS * EMBED_DIM)];
     float* softmax_max = &shared_memory[2 * (QUERY_ROWS * EMBED_DIM + KV_ROWS * EMBED_DIM) + BLOCK_DIM];
     
+    if (threadIdx.x == 0) {
+        softmax_max[threadIdx.y] = -INFINITY;
+        softmax_sum[threadIdx.y] = 0.0f;
+    }
+
+    __syncthreads();
+
     // Stores the intermediate output
     float* intermediate_out_base = &shared_memory[2 * (QUERY_ROWS * EMBED_DIM + KV_ROWS * EMBED_DIM + BLOCK_DIM)];
 
@@ -627,12 +647,14 @@ __global__ void calculate_attention_scores_backwards(
 
 std::vector<torch::Tensor> calculate_attention_scores_cuda(torch::Tensor query, torch::Tensor key, torch::Tensor value) {
     
-    // Create output tensors
-    auto output = torch::zeros({MAX_SEQUENCE_LENGTH, EMBED_DIM}, query.options());
+    const int batch_size = query.size(0);
 
-    auto sum_rows = torch::zeros({MAX_SEQUENCE_LENGTH}, query.options());
-    auto max_rows = torch::full({MAX_SEQUENCE_LENGTH}, -INFINITY, query.options());   
-    auto logsumexp = torch::zeros({MAX_SEQUENCE_LENGTH}, query.options());
+    // Create output tensors
+    auto output = torch::zeros({batch_size, MAX_SEQUENCE_LENGTH, EMBED_DIM}, query.options());
+
+    auto sum_rows = torch::zeros({batch_size, MAX_SEQUENCE_LENGTH}, query.options());
+    auto max_rows = torch::full({batch_size, MAX_SEQUENCE_LENGTH}, -INFINITY, query.options());   
+    auto logsumexp = torch::zeros({batch_size, MAX_SEQUENCE_LENGTH}, query.options());
 
     // Calculate grid and block dimensions
     dim3 threads(BLOCK_DIM, BLOCK_DIM);
@@ -648,100 +670,124 @@ std::vector<torch::Tensor> calculate_attention_scores_cuda(torch::Tensor query, 
         shared_mem_size
     );
 
-    // Launch kernel
-    calculate_attention_scores<<<blocks, threads, shared_mem_size>>>(
-        query.data_ptr<float>(),
-        key.data_ptr<float>(),
-        value.data_ptr<float>(),
-        max_rows.data_ptr<float>(),
-        sum_rows.data_ptr<float>(),
-        output.data_ptr<float>()
-    );
+    for(int b = 0; b < batch_size; b++){
+
+        // Launching the kernel
+        calculate_attention_scores<<<blocks, threads, shared_mem_size>>>(
+            query[b].data_ptr<float>(),
+            key[b].data_ptr<float>(),
+            value[b].data_ptr<float>(),
+            max_rows[b].data_ptr<float>(),
+            sum_rows[b].data_ptr<float>(),
+            output[b].data_ptr<float>()
+        );
+    }
 
     return std::vector<torch::Tensor>{output, max_rows, sum_rows};
 }
 
 std::vector<torch::Tensor> calculate_multihead_attention_scores_cuda(
-    torch::Tensor query, 
-    torch::Tensor key, 
+    torch::Tensor query,
+    torch::Tensor key,
     torch::Tensor value) {
 
-   // Splitting the needed tensors into head tensors
-   auto query_splits = split_matrices(query);
-   auto key_splits = split_matrices(key);
-   auto value_splits = split_matrices(value);
+    auto batch_size = query.size(0);
+    
+    // Splitting the needed tensors into head tensors
+    auto query_splits = split_matrices(query, batch_size);
+    auto key_splits = split_matrices(key, batch_size);
+    auto value_splits = split_matrices(value, batch_size);
+    
+    // Preparing output vectors
+    std::vector<torch::Tensor> all_outputs(batch_size * NUM_HEADS);
+    std::vector<torch::Tensor> all_max_rows(batch_size * NUM_HEADS);
+    std::vector<torch::Tensor> all_sum_rows(batch_size * NUM_HEADS);
+    
+    // Specifying the shape for each attention head
+    dim3 threads(BLOCK_DIM, BLOCK_DIM);
+    dim3 blocks(MAX_SEQUENCE_LENGTH / BLOCK_DIM);
 
-   // Preparing output vectors
-   std::vector<torch::Tensor> all_outputs(NUM_HEADS);
-   std::vector<torch::Tensor> all_max_rows(NUM_HEADS);
-   std::vector<torch::Tensor> all_sum_rows(NUM_HEADS);
+    size_t shared_mem_size = 2 * sizeof(float) * (QUERY_ROWS * EMBED_DIM + KV_ROWS * EMBED_DIM + BLOCK_DIM) +
+        sizeof(float) * QUERY_ROWS * KV_ROWS;
+    
+    cudaFuncSetAttribute(
+        calculate_attention_scores,
+        cudaFuncAttributeMaxDynamicSharedMemorySize,
+        shared_mem_size
+    );
 
-   // Create CUDA streams for parallel processing
-   std::vector<cudaStream_t> streams(NUM_HEADS);
-   for(int i = 0; i < NUM_HEADS; i++) {
-       cudaStreamCreate(&streams[i]);
-   }
+    // Process each batch and head
+    for(int b = 0; b < batch_size; b++) {
 
-   // Specifying the shape for each attention head
-   dim3 threads(BLOCK_DIM, BLOCK_DIM);
-   dim3 blocks(MAX_SEQUENCE_LENGTH / BLOCK_DIM);
-   size_t shared_mem_size = 2 * sizeof(float) * (QUERY_ROWS * EMBED_DIM + KV_ROWS * EMBED_DIM + BLOCK_DIM) +
-       sizeof(float) * QUERY_ROWS * KV_ROWS;
+        for(int i = 0; i < NUM_HEADS; i++) {
+        
+            const int split_idx = b * NUM_HEADS + i;
+            
+            auto output = torch::zeros({MAX_SEQUENCE_LENGTH, EMBED_DIM}, query.options());
+            auto sum_rows = torch::zeros({MAX_SEQUENCE_LENGTH}, query.options());
+            auto max_rows = torch::full({MAX_SEQUENCE_LENGTH}, -INFINITY, query.options());
+            
+            calculate_attention_scores<<<blocks, threads, shared_mem_size>>>(
+                static_cast<float*>(query_splits[split_idx].data_ptr()),
+                static_cast<float*>(key_splits[split_idx].data_ptr()),
+                static_cast<float*>(value_splits[split_idx].data_ptr()),
+                max_rows.data_ptr<float>(),
+                sum_rows.data_ptr<float>(),
+                output.data_ptr<float>()
+            );
+            
+            cudaDeviceSynchronize();
+            
+            all_outputs[split_idx] = output;
+            all_max_rows[split_idx] = max_rows;
+            all_sum_rows[split_idx] = sum_rows;
+        }
+    }
 
-   cudaFuncSetAttribute(
-       calculate_attention_scores,
-       cudaFuncAttributeMaxDynamicSharedMemorySize,
-       shared_mem_size
-   );
+    // Organize outputs by batch first, then concatenate heads
+    std::vector<torch::Tensor> batch_outputs(batch_size);
+    
+    for(int b = 0; b < batch_size; b++) {
+    
+        // Creating separate head outputs to merge in!
+        std::vector<torch::Tensor> head_outputs;
+    
+        for(int h = 0; h < NUM_HEADS; h++) {
+            head_outputs.push_back(all_outputs[b * NUM_HEADS + h]);
+        }
+    
+        batch_outputs[b] = torch::cat(head_outputs, 1);
+    }
 
-   // Process each head using its own stream
-   for(int i = 0; i < NUM_HEADS; i++) {
-       // Create output tensors for this head
-       auto output = torch::zeros({MAX_SEQUENCE_LENGTH, EMBED_DIM}, query.options());
-       auto sum_rows = torch::zeros({MAX_SEQUENCE_LENGTH}, query.options());
-       auto max_rows = torch::full({MAX_SEQUENCE_LENGTH}, -INFINITY, query.options());
+    // Finally, everything is merged back in
+    auto final_output = torch::stack(batch_outputs, 0);
 
-       // Create CUDA event for this stream
-       cudaEvent_t event;
-       cudaEventCreate(&event);
+    // Organize max_rows and sum_rows similarly
+    std::vector<torch::Tensor> batch_max_rows(batch_size);
+    std::vector<torch::Tensor> batch_sum_rows(batch_size);
+    
+    // Processing all max_rows for all batches
+    for(int b = 0; b < batch_size; b++) {
+    
+        // Similarly, we do this head by head
+        std::vector<torch::Tensor> head_max_rows;
+        std::vector<torch::Tensor> head_sum_rows;
+    
+        for(int h = 0; h < NUM_HEADS; h++) {
+            head_max_rows.push_back(all_max_rows[b * NUM_HEADS + h]);
+            head_sum_rows.push_back(all_sum_rows[b * NUM_HEADS + h]);
+        }
 
-       // Launch kernel in this stream
-       calculate_attention_scores<<<blocks, threads, shared_mem_size, streams[i]>>>(
-           static_cast<float*>(query_splits[i].data_ptr()),
-           static_cast<float*>(key_splits[i].data_ptr()),
-           static_cast<float*>(value_splits[i].data_ptr()),
-           max_rows.data_ptr<float>(),
-           sum_rows.data_ptr<float>(),
-           output.data_ptr<float>()
-       );
+        // Stacking the max rows and sum rows vectors
+        batch_max_rows[b] = torch::stack(head_max_rows, 0);
+        batch_sum_rows[b] = torch::stack(batch_sum_rows, 0);
+    }
 
-       // Record event after kernel launch
-       cudaEventRecord(event, streams[i]);
-       
-       // Store outputs
-       all_outputs[i] = output;
-       all_max_rows[i] = max_rows;
-       all_sum_rows[i] = sum_rows;
+    // Performing the final stack, and we're done!
+    auto final_max_rows = torch::stack(batch_max_rows, 0);
+    auto final_sum_rows = torch::stack(batch_sum_rows, 0);
 
-       // Clean up event
-       cudaEventDestroy(event);
-   }
-
-   // Synchronize all streams
-   for(int i = 0; i < NUM_HEADS; i++) {
-       cudaStreamSynchronize(streams[i]);
-   }
-
-   // Clean up streams
-   for(int i = 0; i < NUM_HEADS; i++) {
-       cudaStreamDestroy(streams[i]);
-   }
-
-   auto final_output = torch::cat(all_outputs, 1);
-   auto final_max_rows = torch::stack(all_max_rows);
-   auto final_sum_rows = torch::stack(all_sum_rows);
-
-   return std::vector<torch::Tensor>{final_output, final_max_rows, final_sum_rows};
+    return std::vector<torch::Tensor>{final_output, final_max_rows, final_sum_rows};
 }
 
 std::vector<torch::Tensor> calculate_attention_scores_backward_cuda(
@@ -753,13 +799,15 @@ std::vector<torch::Tensor> calculate_attention_scores_backward_cuda(
     torch::Tensor max_rows, 
     torch::Tensor sum_rows){
         
+    auto batch_size = query.size(0);
+
     // Create output tensors
     auto d_query = torch::zeros_like(query);
     auto d_key = torch::zeros_like(key);
     auto d_value = torch::zeros_like(value);
 
     // Create D tensor
-    torch::Tensor D = (d_output.cuda() * output).sum(1);
+    torch::Tensor D = torch::sum(d_output * output, -1, true);
 
     // Calculate grid and block dimensions
     dim3 threads(BLOCK_DIM, BLOCK_DIM);
@@ -775,21 +823,25 @@ std::vector<torch::Tensor> calculate_attention_scores_backward_cuda(
         shared_mem_size
     );
 
-    // Launch kernel
-    calculate_attention_scores_backwards<<<blocks, threads, shared_mem_size>>>(
-        query.data_ptr<float>(),
-        key.data_ptr<float>(),
-        value.data_ptr<float>(),
-        output.data_ptr<float>(),
-        d_query.data_ptr<float>(),
-        d_key.data_ptr<float>(),
-        d_value.data_ptr<float>(),
-        d_output.data_ptr<float>(),
-        max_rows.data_ptr<float>(),
-        sum_rows.data_ptr<float>(),
-        D.data_ptr<float>()
-    );
+    for(int b = 0; b < batch_size; b++){
 
+        // Launching the kernel
+        calculate_attention_scores_backwards<<<blocks, threads, shared_mem_size>>>(
+            query[b].data_ptr<float>(),
+            key[b].data_ptr<float>(),
+            value[b].data_ptr<float>(),
+            output[b].data_ptr<float>(),
+            d_query[b].data_ptr<float>(),
+            d_key[b].data_ptr<float>(),
+            d_value[b].data_ptr<float>(),
+            d_output[b].data_ptr<float>(),
+            max_rows[b].data_ptr<float>(),
+            sum_rows[b].data_ptr<float>(),
+            D[b].data_ptr<float>()
+        );
+    }
+
+    cudaDeviceSynchronize();
     return std::vector<torch::Tensor>{d_query, d_key, d_value};
 }
 
@@ -803,27 +855,33 @@ std::vector<torch::Tensor> calculate_multihead_attention_backward_cuda(
     torch::Tensor max_rows,
     torch::Tensor sum_rows) {
 
+    const int batch_size = query.size(0);
+
     // Splitting the needed tensors into head tensors
-    auto query_splits = split_matrices(query);
-    auto key_splits = split_matrices(key);
-    auto value_splits = split_matrices(value);
-    auto output_splits = split_matrices(output);
-    auto d_output_splits = split_matrices(d_output);
+    auto query_splits = split_matrices(query, batch_size);
+    auto key_splits = split_matrices(key, batch_size);
+    auto value_splits = split_matrices(value, batch_size);
+    auto output_splits = split_matrices(output, batch_size);
+    auto d_output_splits = split_matrices(d_output, batch_size);
+
     auto max_rows_splits = split_vectors(max_rows);
     auto sum_rows_splits = split_vectors(sum_rows);
 
     // Preparing output vectors
-    std::vector<torch::Tensor> d_queries(NUM_HEADS);
-    std::vector<torch::Tensor> d_keys(NUM_HEADS);
-    std::vector<torch::Tensor> d_values(NUM_HEADS);
+    std::vector<torch::Tensor> d_queries(batch_size * NUM_HEADS);
+    std::vector<torch::Tensor> d_keys(batch_size * NUM_HEADS);
+    std::vector<torch::Tensor> d_values(batch_size * NUM_HEADS);
 
     // Calculating the D value
-    std::vector<torch::Tensor> D_splits(NUM_HEADS);
+    std::vector<torch::Tensor> D_splits(batch_size * NUM_HEADS);
 
-    for(int i = 0; i < NUM_HEADS; i++){
-    
-        torch::Tensor D = (d_output_splits[i] * output_splits[i]).sum(1);
-        D_splits[i] = D;
+    for(int b = 0; b < batch_size; b++){
+
+        for(int i = 0; i < NUM_HEADS; i++){
+        
+            torch::Tensor D = (d_output_splits[b * NUM_HEADS + i] * output_splits[b * NUM_HEADS + i]).sum(1);
+            D_splits[b * NUM_HEADS + i] = D;
+        }
     }
 
     // Specifying the shape for each attention head
@@ -841,39 +899,72 @@ std::vector<torch::Tensor> calculate_multihead_attention_backward_cuda(
     );
 
     // Process each head using its own stream
-    for(int i = 0; i < NUM_HEADS; i++) {
 
-        auto d_query = torch::zeros({MAX_SEQUENCE_LENGTH, EMBED_DIM}, query.options());
-        auto d_key = torch::zeros({MAX_SEQUENCE_LENGTH, EMBED_DIM}, key.options());
-        auto d_value = torch::zeros({MAX_SEQUENCE_LENGTH, EMBED_DIM}, value.options());
+    for(int b = 0; b < batch_size; b++){
 
-        // Launch kernel
-        calculate_attention_scores_backwards<<<blocks, threads, shared_mem_size>>>(
-            static_cast<float*>(query_splits[i].data_ptr()),
-            static_cast<float*>(key_splits[i].data_ptr()),
-            static_cast<float*>(value_splits[i].data_ptr()),
-            static_cast<float*>(output_splits[i].data_ptr()),
-            d_query.data_ptr<float>(),
-            d_key.data_ptr<float>(),
-            d_value.data_ptr<float>(),
-            static_cast<float*>(d_output_splits[i].data_ptr()),
-            static_cast<float*>(max_rows_splits[i].data_ptr()),
-            static_cast<float*>(sum_rows_splits[i].data_ptr()),
-            static_cast<float*>(D_splits[i].data_ptr())
-        );
+        for(int i = 0; i < NUM_HEADS; i++) {
 
-        cudaDeviceSynchronize();
+            const int batch_idx = b * NUM_HEADS + i;
 
-        // Store outputs
-        d_queries[i] = d_query;
-        d_keys[i] = d_key;
-        d_values[i] = d_value;
+            auto d_query = torch::zeros({MAX_SEQUENCE_LENGTH, EMBED_DIM}, query.options());
+            auto d_key = torch::zeros({MAX_SEQUENCE_LENGTH, EMBED_DIM}, key.options());
+            auto d_value = torch::zeros({MAX_SEQUENCE_LENGTH, EMBED_DIM}, value.options());
 
+            // Launch kernel
+            calculate_attention_scores_backwards<<<blocks, threads, shared_mem_size>>>(
+                static_cast<float*>(query_splits[batch_idx].data_ptr()),
+                static_cast<float*>(key_splits[batch_idx].data_ptr()),
+                static_cast<float*>(value_splits[batch_idx].data_ptr()),
+                static_cast<float*>(output_splits[batch_idx].data_ptr()),
+                d_query.data_ptr<float>(),
+                d_key.data_ptr<float>(),
+                d_value.data_ptr<float>(),
+                static_cast<float*>(d_output_splits[batch_idx].data_ptr()),
+                static_cast<float*>(max_rows_splits[batch_idx].data_ptr()),
+                static_cast<float*>(sum_rows_splits[batch_idx].data_ptr()),
+                static_cast<float*>(D_splits[batch_idx].data_ptr())
+            );
+
+            cudaDeviceSynchronize();
+
+            // Store outputs
+            d_queries[batch_idx] = d_query;
+            d_keys[batch_idx] = d_key;
+            d_values[batch_idx] = d_value;
+
+        }
     }
+
+    // Organize derivatives by batch first, then concatenate them by heads
+    std::vector<torch::Tensor> batch_derivatives_queries(batch_size);
+    std::vector<torch::Tensor> batch_derivatives_values(batch_size);
+    std::vector<torch::Tensor> batch_derivatives_keys(batch_size);
     
-    auto d_queries_final = torch::cat(d_queries, 1);
-    auto d_keys_final = torch::cat(d_keys, 1);
-    auto d_values_final = torch::cat(d_values, 1);
+    for(int b = 0; b < batch_size; b++) {
+    
+        // Creating separate head outputs to merge in!
+        std::vector<torch::Tensor> d_queries_batch;
+        std::vector<torch::Tensor> d_values_batch;
+        std::vector<torch::Tensor> d_keys_batch;
+
+        for(int h = 0; h < NUM_HEADS; h++) {
+
+            const int batch_idx = b * NUM_HEADS + h;
+
+            d_queries_batch.push_back(d_queries[batch_idx]);
+            d_values_batch.push_back(d_values[batch_idx]);
+            d_keys_batch.push_back(d_keys[batch_idx]);
+            
+        }
+    
+        batch_derivatives_queries[b] = torch::cat(d_queries_batch, 1);
+        batch_derivatives_values[b] = torch::cat(d_values_batch, 1);
+        batch_derivatives_keys[b] = torch::cat(d_keys_batch, 1);
+    }
+
+    auto d_queries_final = torch::stack(batch_derivatives_queries, 0);
+    auto d_values_final = torch::stack(batch_derivatives_values, 0);
+    auto d_keys_final = torch::stack(batch_derivatives_keys, 0);
 
     return std::vector<torch::Tensor>{d_queries_final, d_keys_final, d_values_final};
 }
