@@ -9,7 +9,7 @@ def mha_config():
     These values can be reused across multiple tests.
     """
     return {
-        'seq_length': 256,
+        'seq_length': 512,
         'hidden_size': 1024,
         'num_heads': 4,
         'rope_dim': 1024,

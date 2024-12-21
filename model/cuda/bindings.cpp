@@ -29,7 +29,8 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         "CUDA Embedding Backward",
         py::arg("grad_output"),
         py::arg("indices"),
-        py::arg("table"));
+        py::arg("table"),
+        py::arg("padding_idx"));
 
     m.def("attention_forward", &calculate_attention_scores_cuda, 
         "Calculate attention scores (CUDA)",

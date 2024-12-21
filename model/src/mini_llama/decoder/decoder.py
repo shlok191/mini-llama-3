@@ -33,6 +33,7 @@ class DecoderLayer(nn.Module):
             num_heads=num_heads,
             rope_dim=rope_dim
         )
+        
         self.attention_norm = RMSNorm(dim=hidden_size)
         
         # Defining the post attention MLP layer

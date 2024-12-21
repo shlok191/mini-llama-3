@@ -152,40 +152,46 @@ def test_embedding_backward():
     print("\n=== Testing Embedding Backward CUDA Function ===")
     
     # Initialize test dimensions
-    vocab_size = 1024  # Size of vocabulary
-    embed_dim = 256    # Embedding dimension
-    seq_length = 512   # Length of input sequence
+    vocab_size = 1024   # Size of vocabulary
+    embed_dim = 1024    # Embedding dimension
+    seq_length = 512    # Length of input sequence
     
     # Create test tensors
     # grad_output represents gradients coming from the next layer
     grad_output = torch.randn(seq_length, embed_dim, 
-                            dtype=torch.float32,
-                            device='cuda')
+                        dtype=torch.float32,
+                        device='cuda')
     
     # indices represents the token IDs used in the forward pass
     indices = torch.randint(0, vocab_size, (seq_length,), 
-                          dtype=torch.int32,
-                          device='cuda')
+                        dtype=torch.int32,
+                        device='cuda')
     
     # table represents the embedding weights
     table = torch.randn(vocab_size, embed_dim, 
                        dtype=torch.float32,
                        device='cuda')
     
+    # Setting the padding index 0 to 0
+    table[0, :] = torch.zeros(embed_dim, device='cuda', dtype=torch.float32)
+    
     # Get gradients using our CUDA implementation
     print("Computing CUDA gradients...")
-    cuda_grad_table = embedding_backward(grad_output, indices, table)
+    cuda_grad_table = embedding_backward(grad_output, indices, table, 0)
+    
+    torch.cuda.synchronize()
     
     # Compute expected gradients using PyTorch
     print("Computing PyTorch gradients for comparison...")
     
     # Create a PyTorch embedding layer with same weights
-    torch_embed = torch.nn.Embedding(vocab_size, embed_dim).cuda()
+    torch_embed = torch.nn.Embedding(vocab_size, embed_dim, padding_idx=0).cuda()
     torch_embed.weight.data.copy_(table)
     
     # Do forward and backward passes
     output = torch_embed(indices)
     output.backward(grad_output)
+    
     torch_grad_table = torch_embed.weight.grad
     
     # Compare results
@@ -223,7 +229,7 @@ def test_embedding_backward():
         end = torch.cuda.Event(enable_timing=True)
         
         start.record()
-        _ = embedding_backward(grad_output, indices, table)
+        _ = embedding_backward(grad_output, indices, table, 0)
         end.record()
         
         torch.cuda.synchronize()

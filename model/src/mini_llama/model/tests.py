@@ -32,7 +32,7 @@ def test_model():
         print("\nTesting forward pass shapes...")
         
         # Create input sequence
-        seq_length = 256
+        seq_length = 512
         
         input_ids = torch.randint(0, config['vocab_size'], 
                                 (seq_length,), 
@@ -58,7 +58,7 @@ def test_model():
         print("\nTesting backward pass and gradient flow...")
         
         # Prepare inputs
-        seq_length = 256
+        seq_length = 512
         config = get_default_config()
         
         input_ids = torch.randint(0, config['vocab_size'], 
@@ -121,7 +121,7 @@ def test_model():
         import os
         
         # Create a test input to compare outputs
-        seq_length = 256
+        seq_length = 512
         test_input = torch.randint(0, config['vocab_size'], 
                                 (seq_length,), 
                                 dtype=torch.int32,

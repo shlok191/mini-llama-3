@@ -7,9 +7,10 @@ from mini_llama.cuda import embedding_forward, embedding_backward
 class FunctionalEmbedding(Function):
     
     @staticmethod
-    def forward(ctx, indices, table):
+    def forward(ctx, indices, table, padding_idx):
         
         ctx.save_for_backward(indices, table)
+        ctx.padding_idx = padding_idx
         
         output = embedding_forward(indices, table)
         return output
@@ -18,7 +19,7 @@ class FunctionalEmbedding(Function):
     def backward(ctx, gradient_output):
         
         indices, table = ctx.saved_tensors
-        grad_weight = embedding_backward(gradient_output, indices, table)
+        grad_weight = embedding_backward(gradient_output, indices, table, ctx.padding_idx)
         
         return None, grad_weight, None
 
@@ -89,8 +90,15 @@ class Embedding(nn.Module):
         # Input validation
         assert indices.dim() == 1, f"Expected 1D input, got {indices.dim()}D input"
         
-        return FunctionalEmbedding.apply(
+        assert not torch.isnan(indices).any()
+        
+        output = FunctionalEmbedding.apply(
             indices, 
-            self.embedding_table
+            self.embedding_table,
+            self.padding_token_value
         )
+        
+        assert not torch.isnan(output).any()
+        
+        return output
         

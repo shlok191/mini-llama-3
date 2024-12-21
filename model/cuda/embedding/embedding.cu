@@ -46,7 +46,8 @@ __global__ void embedding_backward_kernel(
     const int32_t seq_length,
     const int32_t embed_dim,
     const int32_t num_embeddings,
-    const int32_t total_elements) {
+    const int32_t total_elements,
+    const int32_t padding_idx) {
 
     // Calculating the global thread index    
     const int thread_idx = (blockIdx.x * BLOCK_SIZE + threadIdx.x);
@@ -54,9 +55,14 @@ __global__ void embedding_backward_kernel(
     // Calculating the token's value this thread must fetch
     const int thread_token_idx = thread_idx * THREAD_SIZE / embed_dim;
    
-    // Check sequence position is within bounds
+    // Checking that the sequence position is within bounds
     if (thread_token_idx >= seq_length) {
        return;
+    }
+
+    // Skipping the gradient update if this is the padding token!
+    if (indices[thread_token_idx] == padding_idx) {
+        return;
     }
 
     // Finally, copying the elements into the output tensor
@@ -102,7 +108,8 @@ torch::Tensor embedding_forward_cuda(
 torch::Tensor embedding_backward_cuda(
     const torch::Tensor& grad_output,
     const torch::Tensor& indices,
-    const torch::Tensor& table) {
+    const torch::Tensor& table,
+    const int32_t padding_idx) {
 
     auto seq_length = indices.size(0);
     auto embed_dim = table.size(1);
@@ -122,7 +129,8 @@ torch::Tensor embedding_backward_cuda(
         seq_length,
         embed_dim,
         num_embeddings,
-        total_elements
+        total_elements,
+        padding_idx
     );
 
     return grad_weight;

@@ -16,7 +16,7 @@ def test_mlp_output_shape(mlp_config):
     """Tests if the MLP maintains the expected output shape"""
     # Arrange
     mlp = MLP(**mlp_config)
-    seq_length = 256
+    seq_length = 512
     
     x = torch.randn(seq_length, mlp_config['hidden_size']).to("cuda:0")
 
@@ -38,7 +38,7 @@ def test_mlp_activation_function(mlp_config):
     mlp = MLP(**mlp_config)
     
     # Create input with negative values
-    x = torch.randn(256, mlp_config['hidden_size']).to("cuda:0")
+    x = torch.randn(512, mlp_config['hidden_size']).to("cuda:0")
     
     # Making all values negative
     x = -torch.abs(x)
@@ -55,7 +55,7 @@ def test_mlp_gradient_flow(mlp_config):
     
     # Arrange
     mlp = MLP(**mlp_config).to("cuda:0")
-    x = torch.randn(256, mlp_config['hidden_size'], requires_grad=True).to("cuda:0")
+    x = torch.randn(512, mlp_config['hidden_size'], requires_grad=True).to("cuda:0")
     x.retain_grad()
     
     # Act
@@ -76,7 +76,7 @@ def test_mlp_zero_input(mlp_config):
     # Arrange
     mlp = MLP(**mlp_config)
     
-    x = torch.zeros(256, mlp_config['hidden_size']).to("cuda:0")
+    x = torch.zeros(512, mlp_config['hidden_size']).to("cuda:0")
     
     # Act
     with torch.no_grad():

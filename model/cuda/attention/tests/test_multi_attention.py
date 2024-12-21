@@ -16,7 +16,7 @@ def test_MHA_attention_backward(num_runs=1):
     torch.manual_seed(42)
     
     # Set the dimensions
-    sequence_length = 256
+    sequence_length = 512
     embedding_dim_total = 1024
     num_heads = 4
     
@@ -144,7 +144,7 @@ def test_MHA_attention_implementation():
     torch.manual_seed(42)
     
     # Set the dimensions
-    sequence_length = 256
+    sequence_length = 512
     embedding_dim_total = 1024
     num_heads = 4
     

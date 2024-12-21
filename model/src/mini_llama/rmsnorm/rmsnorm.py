@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 class RMSNorm(nn.Module):
-    def __init__(self, dim, eps=1e-8):
+    def __init__(self, dim, eps=1e-6):
         """
         Args:
             dim (int): The dimension of the input feature.
@@ -23,6 +23,8 @@ class RMSNorm(nn.Module):
         Returns:
             torch.Tensor: Normalized tensor of the same shape as input.
         """
+        
+        x_clipped = torch.clamp(x, -1e6, 1e6)  # Prevent extreme values
         
         # Compute the RMS of the input
         rms = torch.sqrt(torch.mean(x ** 2, dim=-1, keepdim=True) + self.eps)

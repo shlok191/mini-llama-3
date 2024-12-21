@@ -21,7 +21,7 @@ def test_decoder_output_shape(decoder_config):
     # Arrange
 
     decoder = DecoderLayer(**decoder_config)
-    seq_length = 256
+    seq_length = 512
 
     x = torch.randn(seq_length, decoder_config['hidden_size'], requires_grad=True).to("cuda:0")
     
@@ -37,7 +37,7 @@ def test_decoder_gradient_flow(decoder_config):
     
     # Arrange
     decoder = DecoderLayer(**decoder_config)
-    seq_length = 256
+    seq_length = 512
     
     x = torch.randn(seq_length, decoder_config['hidden_size'], requires_grad=True).to("cuda:0")
     x.retain_grad()

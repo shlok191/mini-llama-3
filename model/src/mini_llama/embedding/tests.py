@@ -46,8 +46,9 @@ def test_embedding():
     
     # Test 2: Forward pass shape
     print("\nTesting forward pass shapes...")
+    
     embed = Embedding(**config).cuda()
-    seq_length = 256
+    seq_length = 512
     indices = torch.randint(0, vocab_size, (seq_length,), dtype=torch.int32).cuda()
     
     with torch.no_grad():
@@ -97,6 +98,24 @@ def test_embedding():
     assert not torch.allclose(embed.embedding_table, initial_params), \
         "Error: Parameters didn't update after optimization"
     print("✓ Gradient flow passed")
+    
+    # Test 6: Padding tensor must be 0
+    print("\nTesting padding tensor validity...")
+    
+    for _ in range(0, 100):
+        
+        indices = torch.randint(0, vocab_size, (seq_length,), dtype=torch.int32).cuda()
+        initial_params = embed.embedding_table.clone()
+
+        embed.embedding_table.retain_grad()
+        
+        # Forward and backward pass
+        output = embed(indices)
+        loss = output.sum()
+        loss.backward()
+    
+    assert torch.allclose(embed.embedding_table[padding_idx], torch.zeros((embed_dims,), dtype=torch.float32, device='cuda')), "The padding embedding does not have only zero values!"
+    print("✓ Padding index validity passed")
     
     print("\n=== All tests passed successfully! ===")
 

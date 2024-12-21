@@ -10,4 +10,5 @@ torch::Tensor embedding_forward_cuda(
 torch::Tensor embedding_backward_cuda(
     const torch::Tensor& grad_output,
     const torch::Tensor& indices,
-    const torch::Tensor& table);
+    const torch::Tensor& table,
+    const int32_t padding_idx);

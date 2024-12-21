@@ -63,7 +63,7 @@ std::vector<torch::Tensor> split_vectors(torch::Tensor input) {
 #define BLOCK_DIM 32
 #define QUERY_ROWS 32
 #define KV_ROWS 16
-#define MAX_SEQUENCE_LENGTH 256
+#define MAX_SEQUENCE_LENGTH 512
 
 __global__ void calculate_attention_scores(
     const float* query,  // Shape: [SEQUENCE LENGTH][EMBED DIM]
@@ -277,7 +277,7 @@ __global__ void calculate_attention_scores(
     }
 
     // Lastly, we normalize and write the output tile to the global output matrix!
-    float denominator = softmax_sum[threadIdx.y];
+    float denominator = softmax_sum[threadIdx.y] + 1e-6;
 
     #pragma unroll
     for(int j = 0; j < EMBED_DIM; j += 32){

@@ -13,7 +13,7 @@ def test_rmsnorm():
     print("\n=== Testing RMSNorm Implementation ===")
     
     # Initialize with transformer-typical dimensions
-    seq_length = 256  # Typical sequence length
+    seq_length = 512   # Typical sequence length
     hidden_dim = 1024  # Typical hidden dimension
     eps = 1e-8
     

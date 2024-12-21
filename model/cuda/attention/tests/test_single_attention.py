@@ -5,7 +5,7 @@ import math
 
 def test_attention_implementation():
     # Set the dimensions
-    sequence_length = 256
+    sequence_length = 512
     embedding_dim = 256
 
     # Create random input tensors on the GPU
@@ -82,9 +82,9 @@ def test_attention_backward(num_runs=100):
     torch.manual_seed(42)
     
     # Create input tensors on GPU
-    query = torch.randn(256, 256, device='cuda', requires_grad=True)
-    key = torch.randn(256, 256, device='cuda', requires_grad=True)
-    value = torch.randn(256, 256, device='cuda', requires_grad=True)
+    query = torch.randn(512, 256, device='cuda', requires_grad=True)
+    key = torch.randn(512, 256, device='cuda', requires_grad=True)
+    value = torch.randn(512, 256, device='cuda', requires_grad=True)
     
     # Timing CUDA implementation
     cuda_times = []

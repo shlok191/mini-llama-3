@@ -7,19 +7,19 @@ from mini_llama.embedding import Embedding
 from mini_llama.rmsnorm import RMSNorm
 from mini_llama.rope import RoPEmbedding
 from mini_llama.decoder import DecoderLayer
-from mini_llama.linear import Linear
+from torch.nn import Linear
+from mini_llama.tokenizer.rust_tokenizer import MiniLlamaTokenizer # type: ignore
 
 # Importing PyTorch Lightning libraries
 import lightning as L
 import wandb
-from lightning.pytorch.loggers import WandbLogger
-from lightning.pytorch.callbacks import ModelCheckpoint
 
 class MiniLlamaModel(nn.Module):
     def __init__(
         self,
-        vocab_size: int=16384,
+        vocab_size: int=8192,
         embedding_dim: int = 1024,
+        context_length: int = 1024,
         num_decoder_layers: int = 4,
         num_attn_heads: int = 4,
         mlp_layer_intermediate_dim: int = 2048,
@@ -31,11 +31,12 @@ class MiniLlamaModel(nn.Module):
         Args:
             vocab_size (int): The total amount of custom tokens we can have
             embedding_dim (int): The size of the 1D embedding vectors
+            context_length (int): The maximum amount of positional relationships supported
             num_decoder_layers (int): The number of decoder layers
             num_attn_heads (int): The number of attention heads / decoder layer
             mlp_layer_intermediate_dim (int): The intermediate dim for the MLP layer
             dropout (float, optional): Dropout rate. Defaults to 0.1
-            padding_idx (int, optional): Token index for padding. Defaults to 1
+            padding_idx (int, optional): Token index for padding. Defaults to 0
         """
         
         super().__init__()
@@ -54,7 +55,7 @@ class MiniLlamaModel(nn.Module):
                 hidden_size=embedding_dim,
                 num_heads=num_attn_heads,
                 intermediate_size=mlp_layer_intermediate_dim,
-                rope_dim=embedding_dim,
+                rope_dim=context_length,
                 dropout=dropout,
                 activation_fn=nn.SiLU()
             ) for _ in range(num_decoder_layers)
@@ -62,7 +63,7 @@ class MiniLlamaModel(nn.Module):
         
         # Defining the Root-Mean-Squared Normalization at the end
         self.norm = RMSNorm(dim=embedding_dim)
-        self.rope = RoPEmbedding(dim=embedding_dim)
+        self.rope = RoPEmbedding(dim=context_length)
         
     def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
         """Forward pass through the model
@@ -73,9 +74,10 @@ class MiniLlamaModel(nn.Module):
         Returns:
             torch.Tensor: Output embeddings of shape (seq_len, hidden_size)
         """
-        
+
         # Hardcoded value to simplifiy implementation!
-        assert input_ids.shape[0] == 256
+        assert input_ids.shape[0] == 512
+        assert not torch.isnan(input_ids).any()
         
         # Get embeddings using custom CUDA implementation
         hidden_states = self.embedding(input_ids)
@@ -99,7 +101,7 @@ class MiniLlamaForCausalLM(L.LightningModule):
         num_attn_heads: int = 4,
         mlp_layer_intermediate_dim: int = 2048,
         dropout: float = 0.1,
-        padding_idx: int = 1
+        padding_idx: int = 0
     ):
         """Initialize the Llama model for causal language modeling
         
@@ -119,7 +121,9 @@ class MiniLlamaForCausalLM(L.LightningModule):
         
         self.learning_rate = 5e-5
         self.weight_decay = 1e-3
-        self.max_steps = 1e9
+        self.max_steps = 5e7
+        self.tokenizer = MiniLlamaTokenizer.load("/root/mini-llama-3/model/src/tokenizers/pirate_tokenizer_8K.json")
+        self.validation_step_outputs = []
         
         # Letting the first 1000 steps involve warmup
         self.warmup_steps = 1e-3
@@ -136,7 +140,7 @@ class MiniLlamaForCausalLM(L.LightningModule):
         )
         
         # Language modeling head
-        self.lm_head = Linear(embedding_dim, vocab_size)
+        self.lm_head = Linear(embedding_dim, vocab_size, bias=False)
         
         # Weight tying
         self.lm_head.weights = nn.Parameter(self.model.embedding.embedding_table.T)  
@@ -165,7 +169,7 @@ class MiniLlamaForCausalLM(L.LightningModule):
         shift_labels = labels[..., 1:].to(dtype=torch.int64).contiguous()
         
         # Computing the cross entropy loss!
-        loss_fct = nn.CrossEntropyLoss()
+        loss_fct = nn.CrossEntropyLoss(ignore_index=0)
         
         loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
         return loss
@@ -173,9 +177,10 @@ class MiniLlamaForCausalLM(L.LightningModule):
     def generate(
         self,
         input_ids: torch.Tensor,
-        max_length: int = 256,
+        max_length: int = 512,
         temperature: float = 1.0,
-        top_k: int = 50
+        top_k: int = 50,
+        eos_token_id: int = 2
     ) -> torch.Tensor:
         """Generates text given a prompt by sampling from the model's outputs.
         
@@ -189,25 +194,50 @@ class MiniLlamaForCausalLM(L.LightningModule):
             torch.Tensor: Generated sequence of tokens including the prompt
         """
         
+        print("Beginning generation...")
+        
         # Making sure we don't exceed maximum sequence length!
-        assert max_length <= 256, "Model only supports sequences up to length 256"
+        assert max_length <= 512, "Model only supports sequences up to length 256"
         
         # Initializing our current sequence with the question to be answered
         current_sequence = input_ids.clone()
         
-        while current_sequence.shape[0] < max_length:
+        # Adding padding to match max_length
+        if current_sequence.shape[0] < max_length:
+            
+            padding = torch.zeros(max_length - current_sequence.shape[0], dtype=current_sequence.dtype, device='cuda')
+            current_sequence = torch.cat([current_sequence, padding])
+        
+        while True:
+            
+            # Find the position of the first padding token
+            pad_positions = (current_sequence == 0).nonzero(as_tuple=True)[0]
+        
+            # If no padding tokens left, stop generation
+            if len(pad_positions) == 0:
+                break
+                
+            first_pad_pos = pad_positions[0].item()
             
             with torch.no_grad():
                 logits = self.forward(current_sequence, labels=None)
                 
             # We only really need the last logit!
-            next_token_logits = logits[-1, :]
+            next_token_logits = logits[first_pad_pos - 1]
+            next_token_logits = torch.clamp(next_token_logits, min=-1e-3, max=1e3)
             
             # Applying temperature sampling
             next_token_logits = next_token_logits / temperature
             
             # We will use one of the top-K samples that we will pick :)
             top_k_logits, top_k_indices = torch.topk(next_token_logits, top_k)
+            top_k_logits = torch.clamp(top_k_logits, min=-1e-6, max=1e6)
+            
+            if torch.isnan(top_k_logits).any():
+                raise ValueError("Logits contain NaN values.")
+
+            elif torch.isinf(top_k_logits).any():
+                raise ValueError("Logits contain INF values.")
             
             # Creating a distribution from the filtered logits
             probs = torch.softmax(top_k_logits, dim=-1)
@@ -216,25 +246,48 @@ class MiniLlamaForCausalLM(L.LightningModule):
             next_token_index = torch.multinomial(probs, num_samples=1)
             next_token = top_k_indices[next_token_index]
             
-            # Adding the current token to the final sequence!
-            current_sequence = torch.cat([current_sequence, next_token])
+            # Check if we generated an EOS token
+            if next_token.item() == eos_token_id:
+                
+                # Place the EOS token and zero out the rest
+                current_sequence[first_pad_pos] = eos_token_id
+                
+                # Add padding if need be
+                if first_pad_pos + 1 < len(current_sequence):
+                    current_sequence[first_pad_pos + 1:] = 0
+                
+                break
+            
+            # Adding in our brand new token!
+            current_sequence[first_pad_pos] = next_token
         
         return current_sequence
     
     def training_step(self, batch, batch_idx):
         
+        inputs = batch['input_ids'][0]
+        labels = batch['labels'][0]
+        
         # Processing the inputs to get our loss
-        inputs, labels = batch
         loss = self.forward(inputs, labels)
         
         self.log("training_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
-        self.log("learning_rate", self.optimizer.param_groups[0]['lr'], on_step=True)
+        
+        # Fetching the active learning rate
+        scheduler = self.lr_schedulers()
+        
+        if scheduler is not None:
+            
+            lr = scheduler.get_last_lr()[0]
+            self.log("learning_rate", lr, on_step=True)
         
         return loss
     
     def validation_step(self, batch, batch_idx):
         
-        inputs, labels = batch
+        inputs = batch['input_ids'][0]
+        labels = batch['labels'][0]
+        
         loss = self.forward(inputs, labels)
         
         # Calculate perplexity
@@ -251,22 +304,22 @@ class MiniLlamaForCausalLM(L.LightningModule):
         if batch_idx == 0:
             
             # Take first sequence from batch as prompt
-            prompt = inputs[0][:50]  # Use first 50 tokens as prompt
+            prompt = inputs[:15]
             
             # Generate continuation
-            generated = self.generate(
+            generated = self.tokenizer.decode(self.generate(
                 prompt,
-                max_length=256,
+                max_length=512,
                 temperature=1.0,
                 top_k=1
-            )
+            ).cpu().tolist())
             
             # Logging the generated text
             self.logger.experiment.log({
-                "generated_samples": wandb.Table(
-                    columns=["prompt", "generated"],
-                    data=[[prompt.tolist(), generated.tolist()]]
-                )
+               "generated_samples": wandb.Table(
+                   columns=["prompt", "generated"],
+                   data=[[self.tokenizer.decode(prompt.cpu().tolist()), generated]]
+               )
             })
         
         return loss

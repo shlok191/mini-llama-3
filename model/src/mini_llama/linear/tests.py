@@ -31,7 +31,7 @@ def test_forward_pass():
     This ensures our implementation produces correct outputs.
     """
     # Set up dimensions
-    seq_len, in_features, out_features = 128, 512, 256
+    seq_len, in_features, out_features = 512, 512, 256
     
     # Create our custom layer
     custom_layer = Linear(in_features, out_features, device="cuda")

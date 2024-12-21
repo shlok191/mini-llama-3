@@ -56,7 +56,7 @@ class Linear(nn.Module):
     def __init__(self, 
                 in_features: int, 
                 out_features: int, 
-                init_method: str = "kaiming-he",
+                init_method: str = "xavier",
                 device: str = "cuda"):
         
         """Custom Linear layer implementation with CUDA backend.

@@ -76,10 +76,10 @@ class MultiHeadedAttention(nn.Module):
         self.head_dim = hidden_size // num_heads
         
         # Defining the linear layers
-        self.q_proj = Linear(self.hidden_size, self.hidden_size)
-        self.k_proj = Linear(self.hidden_size, self.hidden_size)
-        self.v_proj = Linear(self.hidden_size, self.hidden_size)
-        self.o_proj = Linear(self.hidden_size, self.hidden_size)
+        self.q_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
+        self.k_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
+        self.v_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
+        self.o_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
     
         # Defining rotary embedding and dropout layer
         self.rope = RoPEmbedding(dim=self.rope_dim)
@@ -90,6 +90,8 @@ class MultiHeadedAttention(nn.Module):
         
     def forward(self, X: torch.Tensor):
     
+        assert not torch.isnan(X).any()
+        
         seq_length = X.shape[0]
         
         # Applying dropout to the given input value
@@ -105,8 +107,26 @@ class MultiHeadedAttention(nn.Module):
         key = self.rope.forward(key)
 
         # Calling our in-house attention implementation
-        attn_output = self.attention_fn(query, key, value)
-        attn_output = self.o_proj(attn_output)
+        # attn_output = self.attention_fn(query, key, value)
+
+        scaling_factor = 16
+        
+        attention_scores = torch.matmul(query, key.transpose(-2, -1))
+        attention_scores = attention_scores / scaling_factor
+        
+        attention_scores_max, _ = torch.max(attention_scores, dim=-1, keepdim=True)
+        exp_attention = torch.exp(attention_scores - attention_scores_max)
+        
+        # Calculate softmax denominators (sum of exponentials)
+        attention_sum = torch.sum(exp_attention, dim=-1, keepdim=True)
+        
+        # Compute final attention probabilities with numerical stability safeguard
+        epsilon = 1e-8  # Small constant to prevent division by zero
+        attention_probs = exp_attention / (attention_sum + epsilon)
+        
+        output = torch.matmul(attention_probs, value)
+        
+        attn_output = self.o_proj(output)
         
         # Merging the heads along the embedding dimension!
         return attn_output
