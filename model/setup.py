@@ -93,7 +93,7 @@ setup(
     package_dir={"": "src"},  # Tell setuptools packages are under src
     
     # Extension modules for CUDA & Rust
-    #ext_modules=[get_cuda_extension()],
+    ext_modules=[get_cuda_extension()],
     rust_extensions=[get_rust_extension()],
     
     # Build configuration
@@ -107,6 +107,9 @@ setup(
     install_requires=[
         'torch>=2.4.0',
         'numpy==1.26.0',
+        "pandas>=2.0.0",
+        "pyarrow>=18.0.0",
+        "fastparquet>=2024.0",
         "lightning>=1.9", # For checkpointing and connecting to W&B  
         "wandb>=0.19.0",  # For visualizing training statistics :)
         "tqdm>=4.6.0"     # Adds fancy progress bars

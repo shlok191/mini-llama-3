@@ -46,8 +46,8 @@ class FunctionalLinear(Function):
         
         # Getting the gradient for the inputs and the weights
         # One is passed backwards, and one updates the weights!
-        grad_weight = linear_backward_weights(grad_output, X.T)
-        grad_input = linear_backward_inputs(grad_output, weights.T)
+        grad_weight = linear_backward_weights(grad_output, X.transpose(1, 2).contiguous())
+        grad_input = linear_backward_inputs(grad_output, weights.T.contiguous())
         
         # Return gradients for each input in same order as forward
         return grad_input, grad_weight
