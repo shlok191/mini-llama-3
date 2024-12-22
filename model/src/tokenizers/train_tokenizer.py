@@ -25,11 +25,11 @@ def load_pirate_stories(path: str = "/Users/sabarwal/work/projects/mini-llama-3/
             story = json.loads(line)
             
             stories.append(story['original'])
-            #stories.append(story['pirate'])
+            stories.append(story['pirate'])
         
     return stories
 
-def train_tokenizer(stories: list, vocab_size: int = 4096, iterations: int = 4096 - 72) -> MiniLlamaTokenizer:
+def train_tokenizer(stories: list, vocab_size: int = 8192, iterations: int = 8192 - 99) -> MiniLlamaTokenizer:
     """Trains our custom BPE tokenizer on the dataset provided
     
     Args:
@@ -71,6 +71,8 @@ def test_tokenizer(
     # Printing out our tokenized entries
     for i, text in enumerate(test_texts[:num_samples]):
         
+        text = text.replace('\n', '')
+        
         print(f"\nSample {i+1}:")
         print(f"\nOriginal: {text}")
         
@@ -85,21 +87,21 @@ def test_tokenizer(
         
 if __name__ == "__main__":
     
-    # Load stories
-    stories = load_pirate_stories()
-    print(f"Loaded {len(stories)} stories")
+    # # Load stories
+    # stories = load_pirate_stories()
+    # print(f"Loaded {len(stories)} stories")
     
-    # Train tokenizer
-    tokenizer = train_tokenizer(stories)
+    # # Train tokenizer
+    # tokenizer = train_tokenizer(stories)
     
-    # Test it
-    test_tokenizer(tokenizer)
+    # # Test it
+    # test_tokenizer(tokenizer)
     
-    # Save tokenizer
-    save_path = "pirate_tokenizer_4K.json"
+    # # Save tokenizer
+    save_path = "pirate_tokenizer_8K.json"
     
-    print(f"\nSaving tokenizer to {save_path}")
-    tokenizer.save(save_path)
+    # print(f"\nSaving tokenizer to {save_path}")
+    # tokenizer.save(save_path)
     
     # Verifying loading works
     print("\nVerifying loaded tokenizer:")

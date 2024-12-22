@@ -25,7 +25,7 @@ def load_stories(path: str) -> Dict[str, List[str]]:
     return stories
 
 def run_tokenizer_tests(
-    tokenizer_path: str = "/Users/sabarwal/work/projects/mini-llama-3/model/src/tokenizers/pirate_tokenizer_4K.json",
+    tokenizer_path: str = "/Users/sabarwal/work/projects/mini-llama-3/model/src/tokenizers/pirate_tokenizer_8K.json",
     stories_path: str = "/Users/sabarwal/work/projects/mini-llama-3/dataset/pirate_stories_train.jsonl"
 ) -> None:
     """Run comprehensive tests on our tokenizer using raw story data
@@ -56,17 +56,20 @@ def run_tokenizer_tests(
             test_stories = random.sample(stories[story_type], 5)
             
             for i, story in enumerate(test_stories):
+                
+                story = story.replace('\n', '')
+                
                 # Encode and decode
                 tokens = tokenizer.encode(story, max_length=512)
                 decoded_text = tokenizer.decode(tokens)
                 
                 # Compare original and decoded text
-                if story.strip().lower() == decoded_text.strip().lower():
+                if story.strip() == decoded_text.strip():
                     print(f"✅ Story {i+1} preserved")
                 else:
                     print(f"❌ Story {i+1} mismatch!")
-                    print(f"Original: {story[:100]}...")
-                    print(f"Decoded:  {decoded_text[:100]}...")
+                    print(f"Original: {story[:1000]}...")
+                    print(f"Decoded:  {decoded_text[:1000]}...")
                     
                 # Check token length
                 if len(tokens) == 512:

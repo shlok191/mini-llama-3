@@ -134,7 +134,7 @@ impl BPETokenizer {
         }
 
         // Initializing basic vocabulary with some standard ASCII characters!
-        let basic_chars = "abcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+-=[]{}|;:,.<>?/'~\"\\";
+        let basic_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+-=[]{}|;:,.<>?/'~\"\\";
         
         for c in basic_chars.chars() {
             
@@ -170,11 +170,9 @@ impl BPETokenizer {
         let mut word_freqs: HashMap<String, usize> = HashMap::new();
         
         for text in texts {
-            
-            let lowercase_text = text.to_lowercase();
 
             // Splits text into words and adding </w> to the end of each word for delimiting purposes!
-            for word in lowercase_text.split_whitespace() {
+            for word in text.split_whitespace() {
 
                 let mut chars = word.chars()
                     .map(|c| c.to_string())
@@ -320,11 +318,9 @@ impl BPETokenizer {
 
         // Stores our final encoded tokens
         let mut encoded = Vec::new();
-        
-        let lowercase_text = text.to_lowercase();
 
         // Processing each word individually
-        for word in lowercase_text.split_whitespace() {
+        for word in text.split_whitespace() {
             
             // Splitting each word down to a single characters and then merging them back! :)
             let mut chars = word.chars()
