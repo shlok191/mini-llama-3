@@ -24,17 +24,12 @@ def load_pirate_stories(path: str = "/Users/sabarwal/work/projects/mini-llama-3/
             
             story = json.loads(line)
             
-            # Maintaining only 50% of the original text since we use more Pirate-Speak :)
-            if count % 2 == 0:
-                stories.append(story['original'])
-            
-            stories.append(story['pirate'])
-
-            count += 1
+            stories.append(story['original'])
+            #stories.append(story['pirate'])
         
     return stories
 
-def train_tokenizer(stories: list, vocab_size: int = 8192, iterations: int = 8192 - 98) -> MiniLlamaTokenizer:
+def train_tokenizer(stories: list, vocab_size: int = 4096, iterations: int = 4096 - 72) -> MiniLlamaTokenizer:
     """Trains our custom BPE tokenizer on the dataset provided
     
     Args:
@@ -101,7 +96,7 @@ if __name__ == "__main__":
     test_tokenizer(tokenizer)
     
     # Save tokenizer
-    save_path = "pirate_tokenizer_8K.json"
+    save_path = "pirate_tokenizer_4K.json"
     
     print(f"\nSaving tokenizer to {save_path}")
     tokenizer.save(save_path)

@@ -134,7 +134,7 @@ impl BPETokenizer {
         }
 
         // Initializing basic vocabulary with some standard ASCII characters!
-        let basic_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+-=[]{}|;:,.<>?/'~\"\\";
+        let basic_chars = "abcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+-=[]{}|;:,.<>?/'~\"\\";
         
         for c in basic_chars.chars() {
             
@@ -171,10 +171,18 @@ impl BPETokenizer {
         
         for text in texts {
             
-            // Splits text into words and adds </w> to the end of each word for delimiting purposes!
-            for word in text.split_whitespace() {
+            let lowercase_text = text.to_lowercase();
 
-                let word = format!("{}</w>", word);
+            // Splits text into words and adding </w> to the end of each word for delimiting purposes!
+            for word in lowercase_text.split_whitespace() {
+
+                let mut chars = word.chars()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<_>>();
+                
+                chars.push("</w>".to_string());
+                let word = chars.join(" ");
+            
                 *word_freqs.entry(word).or_insert(0) += 1;
             }
 
@@ -191,17 +199,6 @@ impl BPETokenizer {
         
         // Phase 2: Merging the most adjacent occuring token pairs!
 
-        // Convert words to character sequences
-        let mut word_pieces: HashMap<String, usize> = word_freqs.iter()
-            .map(|(word, &freq)| {
-                let chars = word.chars()
-                    .map(|c| c.to_string())
-                    .collect::<Vec<_>>()
-                    .join(" ");
-                (chars, freq)
-            })
-            .collect();
-     
         // Creating a progress bar!
         let progress_bar = ProgressBar::new(self.iterations as u64);
         
@@ -225,7 +222,7 @@ impl BPETokenizer {
             }
      
             // Getting pair frequencies in parallel
-            let pairs = self.get_pair_frequencies(&Arc::new(word_pieces.clone()));
+            let pairs = self.get_pair_frequencies(&Arc::new(word_freqs.clone()));
             
             if pairs.is_empty() {
                 progress_bar.finish_with_message("No more pairs to merge!");
@@ -246,7 +243,7 @@ impl BPETokenizer {
             self.vocab.insert(merged, self.vocab.len());
             
             // Merging the tokens wherever they occur!
-            word_pieces = self.merge_tokens(&best_pair, &word_pieces);
+            word_freqs = self.merge_tokens(&best_pair, &word_freqs);
             
             // Updating our progress bar 
             if (i + 1) % 1000 == 0 {
@@ -324,17 +321,20 @@ impl BPETokenizer {
         // Stores our final encoded tokens
         let mut encoded = Vec::new();
         
-        // Processing each word individually
-        for word in text.split_whitespace() {
+        let lowercase_text = text.to_lowercase();
 
-            let word = format!("{}</w>", word);
+        // Processing each word individually
+        for word in lowercase_text.split_whitespace() {
             
             // Splitting each word down to a single characters and then merging them back! :)
-            let mut current = word.chars()
+            let mut chars = word.chars()
                 .map(|c| c.to_string())
-                .collect::<Vec<_>>()
-                .join(" ");
-            
+                .collect::<Vec<_>>();
+
+            // Adding the delimiter
+            chars.push("</w>".to_string());
+
+            let mut current = chars.join(" ");
             
             'outer: loop {
 
@@ -431,9 +431,12 @@ impl BPETokenizer {
             } 
         }
 
-        // Finally, remove all occurences of the </w> token!
+        // Finally, remove all occurences of the </w> token
         text.join("")
-            .replace("</w>", " ")
+            .split("</w>")
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
             .trim()
             .to_string()
     }

@@ -127,35 +127,22 @@ def tokenize_dataset(
 if __name__ == "__main__":
     
     # Loading in the tokenizer
-    # tokenizer = MiniLlamaTokenizer.load("/Users/sabarwal/work/projects/mini-llama-3/model/src/tokenizers/pirate_tokenizer_8K.json")
+    tokenizer = MiniLlamaTokenizer.load("/Users/sabarwal/work/projects/mini-llama-3/model/src/tokenizers/pirate_tokenizer_8K.json")
     
-    # # Tokenizing the training set first
-    # print("Tokenizing the training set...\n")
+    # Tokenizing the training set first
+    print("Tokenizing the training set...\n")
     
-    # tokenize_dataset(
-    #     tokenizer, 
-    #     "/Users/sabarwal/work/projects/mini-llama-3/dataset/pirate_stories_train.jsonl",
-    #     "/Users/sabarwal/work/projects/mini-llama-3/dataset/pirate_stories_train_tokenized.json"
-    # )
-    
-    # # Tokenizing the validation set next!
-    # print("\nTokenizing the validation set...\n")
-    
-    # tokenize_dataset(
-    #     tokenizer, 
-    #     "/Users/sabarwal/work/projects/mini-llama-3/dataset/pirate_stories_validation.jsonl",
-    #     "/Users/sabarwal/work/projects/mini-llama-3/dataset/pirate_stories_validation_tokenized.json"
-    # )
-    
-    # Converting the tokenized JSON files to Parquet format
-    convert_json_to_parquet(
-        "/Users/sabarwal/work/projects/mini-llama-3/dataset/pirate_stories_train_tokenized.json",
-        "/Users/sabarwal/work/projects/mini-llama-3/dataset/original_stories_train_tokenized.parquet",
-        "/Users/sabarwal/work/projects/mini-llama-3/dataset/pirate_stories_train_tokenized.parquet"
+    tokenize_dataset(
+        tokenizer, 
+        "/Users/sabarwal/work/projects/mini-llama-3/dataset/pirate_stories_train.jsonl",
+        "/Users/sabarwal/work/projects/mini-llama-3/dataset/pirate_stories_train_tokenized.json"
     )
     
-    convert_json_to_parquet(
-        "/Users/sabarwal/work/projects/mini-llama-3/dataset/pirate_stories_validation_tokenized.json",
-        "/Users/sabarwal/work/projects/mini-llama-3/dataset/original_stories_validation_tokenized.parquet",
-        "/Users/sabarwal/work/projects/mini-llama-3/dataset/pirate_stories_validation_tokenized.parquet"
+    # Tokenizing the validation set next!
+    print("\nTokenizing the validation set...\n")
+    
+    tokenize_dataset(
+        tokenizer, 
+        "/Users/sabarwal/work/projects/mini-llama-3/dataset/pirate_stories_validation.jsonl",
+        "/Users/sabarwal/work/projects/mini-llama-3/dataset/pirate_stories_validation_tokenized.json"
     )
