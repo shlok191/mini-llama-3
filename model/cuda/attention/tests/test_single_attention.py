@@ -2,18 +2,47 @@ import torch
 from mini_llama.cuda import attention_forward, attention_backward
 import time
 import math
+import statistics
 
-def test_attention_implementation(num_runs = 1):
-    # Set the dimensions
-    batch_size = 1
+def test_attention_implementation(num_runs = 10):
+    
+    # Presentation matters :)
+    print("=" * 80)
+    print(f"Testing CUDA attention implementation for single attention head processing...")
+    print("=" * 80)
+    
+    # Setting the dimensions
+    batch_size = 64
     sequence_length = 256
     embedding_dim = 256
+    rtol = 1e-3
+    atol = 1e-5
     
-    for _ in range(num_runs):
+    print("\nConfiguration:")
+    print(f"Sequence Length: {sequence_length}")
+    print(f"Total Embedding Dimension: {embedding_dim}")
+    
+    cuda_times = []
+    pytorch_times = []
+    
+    for run in range(num_runs):
         
-        # Create random input tensors on the GPU with batch dimension
-        # Shape: [batch_size, sequence_length, embedding_dim]
+        print(f"\n{'-' * 80}")
+        print(f"Beginning run {run}...")
+        print(f"{'-' * 80}")
         
+        # Randomly deciding padding sequence lengths (starts at 75-100% of max length)
+        curr_seq_lens = torch.randint(
+            int(0.75 * sequence_length),
+            sequence_length + 1,
+            (batch_size,),
+            device='cuda',
+            dtype=torch.int32
+        )
+        
+        curr_seq_lens = curr_seq_lens.tolist()
+        
+        # Creating our Q, K, and V tensors        
         query = torch.randn(batch_size, sequence_length, embedding_dim,
                         dtype=torch.float32,
                         device='cuda')
@@ -25,29 +54,48 @@ def test_attention_implementation(num_runs = 1):
         value = torch.randn(batch_size, sequence_length, embedding_dim,
                         dtype=torch.float32,
                         device='cuda')
-
-        print("Got here")
-        # Time your CUDA implementation
-        start_time = time.perf_counter()
-        print("Starting CUDA kernel")
-        cuda_output, _, _ = attention_forward(query, key, value)
         
+        # Zeroing out embeddings for padded positions
+        for b in range(batch_size):
+            query[b, curr_seq_lens[b]:] = 0
+            key[b, curr_seq_lens[b]:] = 0
+            value[b, curr_seq_lens[b]:] = 0
+            
+        # Timing the CUDA performance
+        start_time = time.perf_counter()
+        cuda_output, _, _ = attention_forward(query.clone(), key.clone(), value.clone(), curr_seq_lens)
         torch.cuda.synchronize()
         cuda_time = time.perf_counter() - start_time
 
+        cuda_times.append(cuda_time)
+        
         # Time the PyTorch implementation with batching
         start_time = time.perf_counter()
         
         # Reshape inputs to separate heads
         batch_size, seq_len, _ = query.shape
-        query_reshaped = query.view(batch_size, seq_len, embedding_dim)
-        key_reshaped = key.view(batch_size, seq_len, embedding_dim)
-        value_reshaped = value.view(batch_size, seq_len, embedding_dim)
+        query_reshaped = query.clone().view(batch_size, seq_len, embedding_dim).clone()
+        key_reshaped = key.clone().view(batch_size, seq_len, embedding_dim).clone()
+        value_reshaped = value.clone().view(batch_size, seq_len, embedding_dim).clone()
 
         # Calculate attention scores for each batch and head
         scores = torch.matmul(query_reshaped, key_reshaped.transpose(-2, -1))
         
         scores = scores / math.sqrt(embedding_dim)
+        
+        # Create attention mask combining causal and padding masks
+        attention_mask = torch.zeros((batch_size, seq_len, seq_len), device='cuda', dtype=torch.bool)
+        
+        for b in range(batch_size):
+            
+            # Causal mask
+            attention_mask[b] = torch.triu(torch.ones(seq_len, seq_len), diagonal=1).bool()
+            
+            # Padding mask
+            attention_mask[b, :, curr_seq_lens[b]:] = True 
+
+        # Apply the mask
+        scores = scores.masked_fill(attention_mask, -1e10)        
         attention_weights = torch.softmax(scores, dim=-1)
         
         pytorch_output = torch.matmul(attention_weights, value_reshaped)
@@ -63,9 +111,9 @@ def test_attention_implementation(num_runs = 1):
         print(f"CUDA Output Shape: {cuda_output.shape}")
         print(f"PyTorch output shape: {pytorch_output.shape}")
         
+        pytorch_times.append(pytorch_time)
+        
         # Compare the results
-        rtol = 1e-3
-        atol = 1e-5
         max_diff = torch.max(torch.abs(cuda_output - pytorch_output))
 
         print(f"Maximum difference between implementations: {max_diff}")
@@ -99,6 +147,19 @@ def test_attention_implementation(num_runs = 1):
         print(f"PyTorch implementation time: {pytorch_time * 1000:.3f} ms")
         print(f"Speedup: {pytorch_time/cuda_time:.2f}x")
 
+        print(f"{'-' * 80}")
+    
+    cuda_time_mean = statistics.mean(cuda_times)    
+    pytorch_time_mean = statistics.mean(pytorch_times)
+
+    print(f"\n{'=' * 80}")
+    print("Final Timing Results:")
+    print(f"{'-' * 80}")
+    
+    print(f"CUDA implementation time: {cuda_time_mean * 1000:.3f} ms")
+    print(f"PyTorch implementation time: {pytorch_time_mean * 1000:.3f} ms")
+    print(f"Speedup: {pytorch_time/cuda_time:.2f}x")
+    
 def test_attention_backward(num_runs=100):
     
     torch.manual_seed(42)
@@ -213,4 +274,4 @@ def test_attention_backward(num_runs=100):
     
 if __name__ == "__main__":
     
-    test_attention_backward(1)
+    test_attention_implementation(100)
