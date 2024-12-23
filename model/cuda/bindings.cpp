@@ -54,15 +54,17 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("output"),
         py::arg("d_output"),
         py::arg("max_rows"),
-        py::arg("sum_rows"));
+        py::arg("sum_rows"),
+        py::arg("curr_seq_lens"));
 
-    // m.def("multi_attention_backward", &calculate_multihead_attention_backward_cuda,
-    //     "Calculate attention scores backward for MHA (CUDA)",
-    //     py::arg("query"),
-    //     py::arg("key"),
-    //     py::arg("value"),
-    //     py::arg("output"),
-    //     py::arg("d_output"),
-    //     py::arg("max_rows"),
-    //     py::arg("sum_rows"));
+    m.def("multi_attention_backward", &calculate_multihead_attention_backward_cuda,
+        "Calculate attention scores backward for MHA (CUDA)",
+        py::arg("query"),
+        py::arg("key"),
+        py::arg("value"),
+        py::arg("output"),
+        py::arg("d_output"),
+        py::arg("max_rows"),
+        py::arg("sum_rows"),
+        py::arg("curr_seq_lens"));
 }

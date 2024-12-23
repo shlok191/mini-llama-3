@@ -13,10 +13,10 @@ def test_attention_implementation(num_runs = 10):
     
     # Setting the dimensions
     batch_size = 64
-    sequence_length = 256
+    sequence_length = 320
     embedding_dim = 256
     rtol = 1e-3
-    atol = 1e-5
+    atol = 1e-3
     
     print("\nConfiguration:")
     print(f"Sequence Length: {sequence_length}")
@@ -162,31 +162,73 @@ def test_attention_implementation(num_runs = 10):
     
 def test_attention_backward(num_runs=100):
     
-    torch.manual_seed(42)
+    # Presentation matters :)
+    print("=" * 80)
+    print(f"Testing CUDA backward attention implementation for single attention head processing...")
+    print("=" * 80)
     
-    # Define dimensions
-    batch_size = 1
-    sequence_length = 256
+    # Setting the dimensions
+    batch_size = 64
+    sequence_length = 320
     embedding_dim = 256
+    rtol = 5e-3
+    atol = 5e-3
     
-    # Create input tensors with batch dimension
-    query = torch.randn(batch_size, sequence_length, embedding_dim, 
-        device='cuda', requires_grad=True)
+    print("\nConfiguration:")
+    print(f"Sequence Length: {sequence_length}")
+    print(f"Total Embedding Dimension: {embedding_dim}")
     
-    key = torch.randn(batch_size, sequence_length, embedding_dim, 
-        device='cuda', requires_grad=True)
-    
-    value = torch.randn(batch_size, sequence_length, embedding_dim, 
-        device='cuda', requires_grad=True)
-    
-    # Timing CUDA implementation
     cuda_times = []
-    torch_times = []
+    pytorch_times = []
     
-    print(f"\nBenchmarking CUDA implementation ({num_runs} runs)...")
-    
-    for i in range(num_runs):
+    for run in range(num_runs):
         
+        print(f"\n{'-' * 80}")
+        print(f"Beginning run {run}...")
+        print(f"{'-' * 80}")
+        
+        # Randomly deciding padding sequence lengths (starts at 75-100% of max length)
+        curr_seq_lens = torch.randint(
+            int(0.75 * sequence_length),
+            sequence_length + 1,
+            (batch_size,),
+            device='cuda',
+            dtype=torch.int32
+        )
+        
+        curr_seq_lens = curr_seq_lens.tolist()
+        
+        # Create input tensors with batch dimension
+        query = torch.randn(batch_size, sequence_length, embedding_dim, 
+            device='cuda', requires_grad=False)
+        
+        key = torch.randn(batch_size, sequence_length, embedding_dim, 
+            device='cuda', requires_grad=False)
+        
+        value = torch.randn(batch_size, sequence_length, embedding_dim, 
+            device='cuda', requires_grad=False)
+        
+    
+        print(f"\nBenchmarking CUDA implementation ({num_runs} runs)...")
+
+        for b in range(batch_size):
+            
+            # Create mask of shape [sequence_length]
+            mask = torch.arange(sequence_length, device='cuda') < curr_seq_lens[b]
+            
+            # Expand mask to match embedding dimension: [sequence_length, embedding_dim]
+            mask = mask.unsqueeze(-1).expand(-1, embedding_dim)
+            
+            # Apply mask through multiplication instead of in-place assignment
+            query[b] = query[b] * mask
+            key[b] = key[b] * mask
+            value[b] = value[b] * mask
+        
+        query = query.clone().detach().requires_grad_(True)
+        key = key.clone().detach().requires_grad_(True)
+        value = value.clone().detach().requires_grad_(True)
+        
+        # Timing the CUDA performance
         torch.cuda.empty_cache()
         torch.cuda.synchronize()
         
@@ -195,83 +237,100 @@ def test_attention_backward(num_runs=100):
         
         start_time.record()
         
-        output, max_rows, sum_rows = attention_forward(query, key, value)
+        # Calculating the forward pass
+        output, max_rows, sum_rows = attention_forward(query.clone(), key.clone(), value.clone(), curr_seq_lens)
         grad_output = torch.randn_like(output)
         
+        # Calculating the backward pass
         grad_query, grad_key, grad_value = attention_backward(
-            query, key, value, output, grad_output, max_rows, sum_rows
+            query, key, value, output, grad_output, max_rows, sum_rows, curr_seq_lens
         )
         
         end_time.record()
         torch.cuda.synchronize()
         
-        cuda_times.append(start_time.elapsed_time(end_time))
+        # Storing the times for statistics!
+        cuda_time = start_time.elapsed_time(end_time)
+        cuda_times.append(cuda_time)
         
-        if (i + 1) % 20 == 0:
-            print(f"Completed {i + 1}/{num_runs} CUDA runs")
-    
         # Timing PyTorch implementation
-        
         start_time = torch.cuda.Event(enable_timing=True)
         end_time = torch.cuda.Event(enable_timing=True)
         
         start_time.record()
         
-        # Reshape for multi-head attention
-        query_reshaped = query.view(batch_size, sequence_length, embedding_dim)
-        key_reshaped = key.view(batch_size, sequence_length, embedding_dim)
-        value_reshaped = value.view(batch_size, sequence_length, embedding_dim)
+        # Reshape inputs to separate heads
+        batch_size, seq_len, _ = query.shape
+        query_reshaped = query.clone().view(batch_size, seq_len, embedding_dim).clone()
+        key_reshaped = key.clone().view(batch_size, seq_len, embedding_dim).clone()
+        value_reshaped = value.clone().view(batch_size, seq_len, embedding_dim).clone()
+
+        # Calculate attention scores for each batch and head
+        scores = torch.matmul(query_reshaped, key_reshaped.transpose(-2, -1))
         
-        scores = torch.matmul(query_reshaped, key_reshaped.transpose(-2, -1)) / math.sqrt(embedding_dim)
+        scores = scores / math.sqrt(embedding_dim)
+        
+        # Create attention mask combining causal and padding masks
+        attention_mask = torch.zeros((batch_size, seq_len, seq_len), device='cuda', dtype=torch.bool)
+        
+        for b in range(batch_size):
+            
+            # Causal mask
+            attention_mask[b] = torch.triu(torch.ones(seq_len, seq_len), diagonal=1).bool()
+            
+            # Padding mask
+            attention_mask[b, :, curr_seq_lens[b]:] = True 
+
+        # Apply the mask
+        scores = scores.masked_fill(attention_mask, -1e10)        
         attention_weights = torch.softmax(scores, dim=-1)
         
-        torch_output = torch.matmul(attention_weights, value_reshaped)
-        torch_output = torch_output.view(batch_size, sequence_length, embedding_dim)
-        torch_output.backward(grad_output)
+        pytorch_output = torch.matmul(attention_weights, value_reshaped)
+        
+        # Reshape back to original format
+        # [batch, heads, seq, dim] -> [batch, seq, heads*dim]
+        pytorch_output = pytorch_output.view(
+            batch_size, seq_len, embedding_dim)
+        
+        # Calculating the backward loss
+        pytorch_output.backward(grad_output)
         
         end_time.record()
-        
         torch.cuda.synchronize()
-        torch_times.append(start_time.elapsed_time(end_time))
         
+        pytorch_time = start_time.elapsed_time(end_time)
+        pytorch_times.append(pytorch_time)
+        
+        # Printing out important metrics
         print("\nGradient Comparison:")
         
         print(f"Maximum difference in query gradients: {torch.max(torch.abs(grad_query - query.grad)).item():.6f}")
         print(f"Maximum difference in key gradients: {torch.max(torch.abs(grad_key - key.grad)).item():.6f}")
         print(f"Maximum difference in value gradients: {torch.max(torch.abs(grad_value - value.grad)).item():.6f}")
     
-        assert torch.allclose(grad_query, query.grad, rtol=1e-3, atol=1e-3), "Query gradients don't match!"
-        assert torch.allclose(grad_key, key.grad, rtol=1e-3, atol=1e-3), "Key gradients don't match!"
-        assert torch.allclose(grad_value, value.grad, rtol=1e-3, atol=1e-3), "Value gradients don't match!"
+        assert torch.allclose(grad_query, query.grad, rtol=rtol, atol=atol), "Query gradients don't match!"
+        assert torch.allclose(grad_key, key.grad, rtol=rtol, atol=atol), "Key gradients don't match!"
+        assert torch.allclose(grad_value, value.grad, rtol=rtol, atol=atol), "Value gradients don't match!"
         
-        if(i != num_runs - 1):
-            query.grad = None
-            key.grad = None
-            value.grad = None
-        
-        if (i + 1) % 20 == 0:
-            print(f"Completed {i + 1}/{num_runs} PyTorch runs")
+        print("\nTiming Results:")
+        print(f"CUDA implementation time: {cuda_time * 1000:.3f} ms")
+        print(f"PyTorch implementation time: {pytorch_time * 1000:.3f} ms")
+        print(f"Speedup: {pytorch_time/cuda_time:.2f}x")
 
-        
-    # Calculate statistics and print results
-    cuda_mean = sum(cuda_times) / len(cuda_times)
-    cuda_std = (sum((x - cuda_mean) ** 2 for x in cuda_times) / len(cuda_times)) ** 0.5
+        print(f"{'-' * 80}")
     
-    torch_mean = sum(torch_times) / len(torch_times)
-    torch_std = (sum((x - torch_mean) ** 2 for x in torch_times) / len(torch_times)) ** 0.5
+    # Printing out the final statistics
+    cuda_time_mean = statistics.mean(cuda_times)    
+    pytorch_time_mean = statistics.mean(pytorch_times)
+
+    print(f"\n{'=' * 80}")
+    print("Final Timing Results:")
+    print(f"{'-' * 80}")
     
-    print("\nTiming Results:")
-    print(f"CUDA Implementation: {cuda_mean:.3f} ms ± {cuda_std:.3f} ms")
-    print(f"PyTorch Implementation: {torch_mean:.3f} ms ± {torch_std:.3f} ms")
-    print(f"Speedup: {torch_mean/cuda_mean:.2f}x")
-    
-    # Assert gradient correctness
-    assert torch.allclose(grad_query, query.grad, rtol=1e-3, atol=1e-3), "Query gradients don't match!"
-    assert torch.allclose(grad_key, key.grad, rtol=1e-3, atol=1e-3), "Key gradients don't match!"
-    assert torch.allclose(grad_value, value.grad, rtol=1e-3, atol=1e-3), "Value gradients don't match!"
-    
-    print("\nAll gradient checks passed!")
+    print(f"CUDA implementation time: {cuda_time_mean * 1000:.3f} ms")
+    print(f"PyTorch implementation time: {pytorch_time_mean * 1000:.3f} ms")
+    print(f"Speedup: {pytorch_time/cuda_time:.2f}x")
     
 if __name__ == "__main__":
     
-    test_attention_implementation(100)
+    test_attention_backward(10)

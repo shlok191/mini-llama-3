@@ -4,50 +4,65 @@ import json
 from tqdm.auto import tqdm
 import pandas as pd
 
-def convert_json_to_parquet(json_path: str, parquet_path_1: str, parquet_path_2: str) -> None:
-    """Converts JSON to more memory-fridnedly Parquet format
+def create_sequences_from_tokens(
+        parquet_path: str = "/Users/sabarwal/work/projects/mini-llama-3/dataset/tiny_stories_train_tokenized.parquet",
+        output_path: str = "/Users/sabarwal/work/projects/mini-llama-3/dataset/tiny_stories_train_sequences.parquet",
+        column_name: str = "original_tokens",
+        sequence_length: int = 256,
+        stride: int = 32,
+        padding_idx: int = 0,
+        eos_idx: int = 2):
+    """Generates uniform length sequences from a tokenized dataset
 
     Args:
-        json_path (str): The path to the JSON files
-        parquet_path (str): The path to the Parquet files
+        parquet_path (str, optional): The path to the input parquet path
+        output_path (str, optional): The path to the output parquet path
+        column_name (str, optional): The column ID to fetch
+        sequence_length (int, optional): The maximum sequence length of the sequence
+        stride (int, optional): The stride to take when creating sequences
+        padding_idx (int, optional): The padding idx of the tokenizer
+        eos_idx (int, optional): The EOS idx of the tokenizer
     """
+
+    # Reading in the parquet file
+    dataset = pd.read_parquet(parquet_path, columns=[column_name])[column_name].values.tolist()
     
-    # Read the JSON file
-    with open(json_path, 'r') as f:
-        data = json.load(f)
+    sequences = []
     
-    non_512_pirate = 0
-    non_512_original = 0
-    
-    for entry in data['original']:
+    for story in tqdm(dataset, colour="green", desc="Creating sequences from tokenized stories..."):
         
-        if len(entry) != 512:
-            non_512_original += 1
-    
-    for entry in data['pirate']:
+        # Converting the story to a list in python
+        story = story.tolist()
         
-        if len(entry) != 512:
-            non_512_pirate += 1
+        curr_start = 0
+        curr_end = sequence_length
         
-    print(f"Original stories not of length 512: {non_512_original}")
-    print(f"Pirate stories not of length 512: {non_512_pirate}")
+        eos_position = story.index(eos_idx)
+        
+        # Only generate sequences until the EOS token is not crossed!
+        while(curr_end <= eos_position):
+            
+            sequence = story[curr_start:curr_end]
+            sequence = sequence + [padding_idx] * (512 - sequence_length)
+            
+            # Pushing forward our indices
+            curr_end += stride
+            curr_start += stride
+
+            # Finally, pushing the sequence to the list
+            sequences.append(sequence)
     
-    # Convert to pandas DataFrame
-    original_df = pd.DataFrame({
-        'original_tokens': data['original'],
-    })
+    # Now, we store the sequences into a parquet file!
+    df = pd.DataFrame(sequences)
+        
+    print("\nWe are finished now! Here is some analysis:\n")
+
+    print(df.describe())
+    print(df.head(5))
     
-    pirate_df = pd.DataFrame({
-        'pirate_tokens': data['pirate'],
-    })
-    
-    # Save as Parquet
-    original_df.to_parquet(parquet_path_1)
-    pirate_df.to_parquet(parquet_path_2)
-    
-    print(f"Converted {json_path} to Parquet format at {parquet_path_1}")
-    
-def load_pirate_stories(path: str = "/Users/sabarwal/work/projects/mini-llama-3/dataset/pirate_stories_train.jsonl") -> List[str]:
+    df.to_parquet(output_path)
+      
+def load_pirate_stories(path: str = "/Users/sabarwal/work/projects/mini-llama-3/datasets/pirate_stories_train.jsonl") -> List[str]:
     """Loads the TinyStories - pirated version :)
     
     Args:
@@ -68,9 +83,9 @@ def load_pirate_stories(path: str = "/Users/sabarwal/work/projects/mini-llama-3/
         for line in tqdm(file, desc='🏴‍☠️ Plunderin\' Stories!', colour='green'):
             
             story = json.loads(line)
-            
-            # Only keeping 25% of the original stories!
-            if count % 4 == 0:
+        
+            # Only keeping 33% of the original stories!
+            if count % 3 == 0:
                 stories["original"].append(story['original'])
                 
             stories["pirate"].append(story['pirate'])
@@ -98,10 +113,10 @@ def tokenize_dataset(
     tokenized_dataset = {"original": [], "pirate": []}
     
     # Taking all of the available stories!
-    for story in tqdm(dataset["pirate"], desc='🏴‍☠️ Tokenizin\' Stories!', colour='green'):
+    # for story in tqdm(dataset["pirate"], desc='🏴‍☠️ Tokenizin\' Stories!', colour='green'):
         
-        story = story.replace('"', '\"')            
-        tokenized_dataset["pirate"].append(tokenizer.encode(story, 512))
+    #     story = story.replace('"', '\"')            
+    #     tokenized_dataset["pirate"].append(tokenizer.encode(story, 512))
     
     # Taking all of the available original stories!
     for story in tqdm(dataset["original"], desc='Tokenizing the original TinyStories! :)', colour='green'):
@@ -114,12 +129,12 @@ def tokenize_dataset(
         'original_tokens': tokenized_dataset["original"],
     })
     
-    pirate_df = pd.DataFrame({
-        'pirate_tokens': tokenized_dataset["pirate"],
-    })
+    # pirate_df = pd.DataFrame({
+    #     'pirate_tokens': tokenized_dataset["pirate"],
+    # })
     
     original_df.to_parquet(output_path.replace(".json", "_original.parquet"))
-    pirate_df.to_parquet(output_path.replace(".json", "_pirate.parquet"))
+    #pirate_df.to_parquet(output_path.replace(".json", "_pirate.parquet"))
     
     # Save to Parquet
     print(f"Tokenized dataset saved to {output_path}!")
@@ -127,15 +142,15 @@ def tokenize_dataset(
 if __name__ == "__main__":
     
     # Loading in the tokenizer
-    tokenizer = MiniLlamaTokenizer.load("/Users/sabarwal/work/projects/mini-llama-3/model/src/tokenizers/pirate_tokenizer_8K.json")
+    tokenizer = MiniLlamaTokenizer.load("/root/mini-llama-3/model/src/tokenizers/pirate_tokenizer_8K.json")
     
     # Tokenizing the training set first
     print("Tokenizing the training set...\n")
     
     tokenize_dataset(
         tokenizer, 
-        "/Users/sabarwal/work/projects/mini-llama-3/dataset/pirate_stories_train.jsonl",
-        "/Users/sabarwal/work/projects/mini-llama-3/dataset/pirate_stories_train_tokenized.json"
+        "/root/mini-llama-3/datasets/pirate_stories_train.jsonl",
+        "/root/mini-llama-3/datasets/pirate_stories_train_tokenized.json"
     )
     
     # Tokenizing the validation set next!
@@ -143,6 +158,6 @@ if __name__ == "__main__":
     
     tokenize_dataset(
         tokenizer, 
-        "/Users/sabarwal/work/projects/mini-llama-3/dataset/pirate_stories_validation.jsonl",
-        "/Users/sabarwal/work/projects/mini-llama-3/dataset/pirate_stories_validation_tokenized.json"
+        "/root/mini-llama-3/datasets/pirate_stories_validation.jsonl",
+        "/root/mini-llama-3/datasets/pirate_stories_validation_tokenized.json"
     )
