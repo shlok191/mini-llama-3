@@ -88,7 +88,7 @@ class Embedding(nn.Module):
         """
         
         # Input validation
-        assert indices.dim() == 1, f"Expected 1D input, got {indices.dim()}D input"
+        assert indices.dim() == 2, f"Expected 2D input with batches, got {indices.dim()}D input"
         
         assert not torch.isnan(indices).any()
         

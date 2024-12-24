@@ -3,6 +3,7 @@ import torch.nn as nn
 from mini_llama.attention import MultiHeadedAttention
 from mini_llama.rmsnorm import RMSNorm
 from mini_llama.mlp import MLP
+from typing import List
 
 class DecoderLayer(nn.Module):
     def __init__(self,
@@ -47,11 +48,12 @@ class DecoderLayer(nn.Module):
         self.input_layer_norm = RMSNorm(dim=hidden_size)
         self.post_attn_norm = RMSNorm(dim=hidden_size)
         
-    def forward(self, X: torch.Tensor) -> torch.Tensor:
+    def forward(self, X: torch.Tensor, curr_seq_lens: List[int]) -> torch.Tensor:
         """Forward pass of the decoder layer
         
         Args:
             X (torch.Tensor): Input tensor of shape (seq_len, hidden_size)
+            curr_seq_lens (List[int]): The length of the non-padded tokens for the batch
             
         Returns:
             torch.Tensor: Output tensor of shape (seq_len, hidden_size)
@@ -60,7 +62,7 @@ class DecoderLayer(nn.Module):
         # Self-attention block with residual connection
         norm_X = self.input_layer_norm(X).to("cuda:0")
         
-        X = X + self.attention(norm_X)
+        X = X + self.attention(norm_X, curr_seq_lens)
         
         # Having the output past through the feed forward layer
         norm_X = self.post_attn_norm(X).to("cuda:0")

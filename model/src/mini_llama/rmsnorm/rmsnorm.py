@@ -24,7 +24,7 @@ class RMSNorm(nn.Module):
             torch.Tensor: Normalized tensor of the same shape as input.
         """
         
-        x_clipped = torch.clamp(x, -1e6, 1e6)  # Prevent extreme values
+        x_clipped = torch.clamp(x, -1e6, 1e6)  # Preventing extreme values
         
         # Compute the RMS of the input
         rms = torch.sqrt(torch.mean(x ** 2, dim=-1, keepdim=True) + self.eps)

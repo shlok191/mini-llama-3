@@ -7,12 +7,13 @@ from mini_llama.embedding import Embedding
 from mini_llama.rmsnorm import RMSNorm
 from mini_llama.rope import RoPEmbedding
 from mini_llama.decoder import DecoderLayer
-from torch.nn import Linear
-from mini_llama.tokenizer.rust_tokenizer import MiniLlamaTokenizer # type: ignore
+from mini_llama.linear import Linear
+from mini_llama.tokenizer.rust_tokenizer import MiniLlamaTokenizer
 
 # Importing PyTorch Lightning libraries
 import lightning as L
 import wandb
+from typing import List
 
 class MiniLlamaModel(nn.Module):
     def __init__(
@@ -65,18 +66,21 @@ class MiniLlamaModel(nn.Module):
         self.norm = RMSNorm(dim=embedding_dim)
         self.rope = RoPEmbedding(dim=context_length)
         
-    def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+    def forward(self, input_ids: torch.Tensor, curr_seq_lens: List[int]) -> torch.Tensor:
         """Forward pass through the model
         
         Args:
             input_ids (torch.Tensor): Input token indices of shape (seq_len)
+            curr_seq_lens (List[int]): The length of the non-padded tokens for the batch
             
         Returns:
             torch.Tensor: Output embeddings of shape (seq_len, hidden_size)
         """
 
+        print(input_ids.shape)
+        
         # Hardcoded value to simplifiy implementation!
-        assert input_ids.shape[0] == 512
+        assert input_ids.shape[-1] == 320
         assert not torch.isnan(input_ids).any()
         
         # Get embeddings using custom CUDA implementation
@@ -84,7 +88,7 @@ class MiniLlamaModel(nn.Module):
         
         # Pass through each decoder layer
         for layer in self.decoder_layers:
-            hidden_states = layer(hidden_states)
+            hidden_states = layer(hidden_states, curr_seq_lens)
         
         # # Final normalization
         hidden_states = self.norm(hidden_states)
@@ -101,7 +105,8 @@ class MiniLlamaForCausalLM(L.LightningModule):
         num_attn_heads: int = 4,
         mlp_layer_intermediate_dim: int = 2048,
         dropout: float = 0.1,
-        padding_idx: int = 0
+        padding_idx: int = 0,
+        tokenizer_path: str = "/root/mini-llama-3/model/src/tokenizers/tokenizer_configs/pirate_tokenizer_8K.json"
     ):
         """Initialize the Llama model for causal language modeling
         
@@ -113,20 +118,22 @@ class MiniLlamaForCausalLM(L.LightningModule):
             mlp_layer_intermediate_dim (int): The intermediate dim for the MLP layer
             dropout (float, optional): Dropout rate. Defaults to 0.1
             padding_idx (int, optional): Token index for padding. Defaults to 1
+            tokenizer_path (str): The path to the tokenizer
         """
         super().__init__()
         
         # We will monitor all hyperparams except our model :)
         self.save_hyperparameters(ignore=["model"])
         
-        self.learning_rate = 5e-5
-        self.weight_decay = 1e-3
-        self.max_steps = 5e7
-        self.tokenizer = MiniLlamaTokenizer.load("/root/mini-llama-3/model/src/tokenizers/pirate_tokenizer_8K.json")
+        self.learning_rate = 5e-4
+        self.weight_decay = 5e-2
+        self.max_steps = 1e6
+        self.tokenizer = MiniLlamaTokenizer.load(tokenizer_path)
         self.validation_step_outputs = []
+        self.tokenizer_path = tokenizer_path
         
         # Letting the first 1000 steps involve warmup
-        self.warmup_steps = 1e-3
+        self.warmup_steps = 1e3
         
         # Main model
         self.model = MiniLlamaModel(
@@ -140,24 +147,25 @@ class MiniLlamaForCausalLM(L.LightningModule):
         )
         
         # Language modeling head
-        self.lm_head = Linear(embedding_dim, vocab_size, bias=False)
+        self.lm_head = Linear(embedding_dim, vocab_size)
         
-        # Weight tying
+        # Weight tying to the embedding table!
         self.lm_head.weights = nn.Parameter(self.model.embedding.embedding_table.T)  
               
-    def forward(self, input_ids: torch.Tensor, labels: torch.Tensor) -> torch.Tensor:
+    def forward(self, input_ids: torch.Tensor, labels: torch.Tensor, curr_seq_lens: List[int]) -> torch.Tensor:
         """Generates logits for each input ID
         
         Args:
             input_ids (torch.Tensor): Input token indices of shape (seq_len,)
             labels (torch.Tensor): Labels of the shape (seq_len, )
+            curr_seq_lens (List[int]): The length of the non-padded sequences for the batch
             
         Returns:
             torch.Tensor: Logits of shape (seq_len, vocab_size)
         """
         
         # First, we calculate the logits!
-        logits = self.model(input_ids)
+        logits = self.model(input_ids, curr_seq_lens)
         logits = self.lm_head(logits)
         
         # If no labels provided, we simply return the logits
@@ -166,18 +174,18 @@ class MiniLlamaForCausalLM(L.LightningModule):
             
         # Otherwise we compute the loss
         shift_logits = logits[..., :-1, :].contiguous()
-        shift_labels = labels[..., 1:].to(dtype=torch.int64).contiguous()
-        
+
         # Computing the cross entropy loss!
         loss_fct = nn.CrossEntropyLoss(ignore_index=0)
         
-        loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+        # Collapsing every dimension except the last one!
+        loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1))
         return loss
     
     def generate(
         self,
         input_ids: torch.Tensor,
-        max_length: int = 512,
+        max_length: int = 320,
         temperature: float = 1.0,
         top_k: int = 50,
         eos_token_id: int = 2
@@ -197,7 +205,7 @@ class MiniLlamaForCausalLM(L.LightningModule):
         print("Beginning generation...")
         
         # Making sure we don't exceed maximum sequence length!
-        assert max_length <= 512, "Model only supports sequences up to length 256"
+        assert max_length <= 320, "Model only supports sequences up to length 320"
         
         # Initializing our current sequence with the question to be answered
         current_sequence = input_ids.clone()
@@ -220,7 +228,7 @@ class MiniLlamaForCausalLM(L.LightningModule):
             first_pad_pos = pad_positions[0].item()
             
             with torch.no_grad():
-                logits = self.forward(current_sequence, labels=None)
+                logits = self.forward(current_sequence, labels=None, curr_seq_lens=[first_pad_pos])
                 
             # We only really need the last logit!
             next_token_logits = logits[first_pad_pos - 1]
@@ -265,16 +273,21 @@ class MiniLlamaForCausalLM(L.LightningModule):
     
     def training_step(self, batch, batch_idx):
         
-        inputs = batch['input_ids'][0]
-        labels = batch['labels'][0]
+        inputs = batch['input_ids']
+        labels = batch['labels']
+        curr_seq_lens = batch['curr_seq_lens']
         
         # Processing the inputs to get our loss
-        loss = self.forward(inputs, labels)
+        loss = self.forward(inputs, labels, curr_seq_lens)
         
         self.log("training_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
         
         # Fetching the active learning rate
         scheduler = self.lr_schedulers()
+        
+        # Updating the LR according to CosineAnnealing :)
+        if(self.global_step > self.warmup_steps):
+            scheduler.step()
         
         if scheduler is not None:
             
@@ -285,33 +298,34 @@ class MiniLlamaForCausalLM(L.LightningModule):
     
     def validation_step(self, batch, batch_idx):
         
-        inputs = batch['input_ids'][0]
-        labels = batch['labels'][0]
+        inputs = batch['input_ids']
+        labels = batch['labels']
+        curr_seq_lens = batch['curr_seq_lens']
         
-        loss = self.forward(inputs, labels)
+        loss = self.forward(inputs, labels, curr_seq_lens)
         
         # Calculate perplexity
         perplexity = torch.exp(loss)
         
         # Log metrics
-        self.log("validation_loss", loss, on_epoch=True, prog_bar=True)
-        self.log("validation_perplexity", perplexity, on_epoch=True)
+        self.log("validation_loss", loss, on_step=True, on_epoch=True, prog_bar=True)
+        self.log("validation_perplexity", perplexity, on_step=True, on_epoch=True)
         
         # Store for epoch end validation
         self.validation_step_outputs.append({"val_loss": loss, "val_perplexity": perplexity})
         
-        # Generate sample text every N validation steps
+        # Generating sample text every N validation steps
         if batch_idx == 0:
             
-            # Take first sequence from batch as prompt
-            prompt = inputs[:15]
+            # Taking the first sequence from batch as prompt
+            prompt = inputs[:50]
             
             # Generate continuation
             generated = self.tokenizer.decode(self.generate(
                 prompt,
-                max_length=512,
+                max_length=320,
                 temperature=1.0,
-                top_k=1
+                top_k=50
             ).cpu().tolist())
             
             # Logging the generated text

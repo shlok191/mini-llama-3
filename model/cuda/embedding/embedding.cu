@@ -81,10 +81,20 @@ torch::Tensor embedding_forward_cuda(
     const torch::Tensor& indices,
     const torch::Tensor& table) {
     
-    const int seq_length = indices.size(0);
+    const int batch_size = indices.size(0);
+    const int seq_length = indices.size(1);
+
     const int embed_dim = table.size(1);
 
-    torch::Tensor output = torch::zeros({seq_length, embed_dim}, table.device());
+    torch::Tensor output = torch::zeros({batch_size, seq_length, embed_dim}, table.device());
+
+    // Creating CUDA streams
+    std::vector<cudaStream_t> streams(batch_size);
+
+    // Creating PyTorch streams
+    for(int b = 0; b < batch_size; b++){
+        cudaStreamCreate(&streams[b]);
+    }
 
     // Configuring a 1D block
     const int total_elements = seq_length * embed_dim;
@@ -92,15 +102,25 @@ torch::Tensor embedding_forward_cuda(
     // Calculating total blocks in the grid for 1024 threads / block
     const int num_blocks = total_elements / BLOCK_SIZE * THREAD_SIZE;
 
-    // Call the CUDA kernel
-    embedding_forward_kernel<<<num_blocks, BLOCK_SIZE>>>(
-        table.data_ptr<float>(),
-        indices.data_ptr<int32_t>(),
-        output.data_ptr<float>(),
-        seq_length,
-        embed_dim);
+    for(int b = 0; b < batch_size; b++){
+    
+        // Call the CUDA kernel
+        embedding_forward_kernel<<<num_blocks, BLOCK_SIZE, 0, streams[b]>>>(
+            table.data_ptr<float>(),
+            indices[b].data_ptr<int32_t>(),
+            output[b].data_ptr<float>(),
+            seq_length,
+            embed_dim);
 
-    cudaDeviceSynchronize();
+        cudaStreamSynchronize(streams[b]);
+    }
+
+    // Handling the created streams
+    for(int b = 0; b < batch_size; b++){
+
+        cudaStreamSynchronize(streams[b]);
+        cudaStreamDestroy(streams[b]);
+    }
 
     return output;
 }
@@ -111,27 +131,48 @@ torch::Tensor embedding_backward_cuda(
     const torch::Tensor& table,
     const int32_t padding_idx) {
 
-    auto seq_length = indices.size(0);
+    auto batch_size = indices.size(0);
+    auto seq_length = indices.size(1);
+
     auto embed_dim = table.size(1);
     auto num_embeddings = table.size(0);
 
-    auto grad_weight = torch::zeros_like(table);
+    // Creating CUDA streams
+    std::vector<cudaStream_t> streams(batch_size);
+
+    // Creating PyTorch streams
+    for(int b = 0; b < batch_size; b++){
+        cudaStreamCreate(&streams[b]);
+    }
+
+    auto grad_weight = torch::zeros({batch_size, num_embeddings, embed_dim}, grad_output.options());
 
     const int total_elements = seq_length * embed_dim;
 
     // Number of blocks needed to process all elements
     const int num_blocks = total_elements / (BLOCK_SIZE * THREAD_SIZE);
 
-    embedding_backward_kernel<<<num_blocks, BLOCK_SIZE>>>(
-        grad_output.data_ptr<float>(),
-        indices.data_ptr<int32_t>(),
-        grad_weight.data_ptr<float>(),
-        seq_length,
-        embed_dim,
-        num_embeddings,
-        total_elements,
-        padding_idx
-    );
+    for(int i = 0; i < batch_size; i++){
 
-    return grad_weight;
+        embedding_backward_kernel<<<num_blocks, BLOCK_SIZE, 0, streams[i]>>>(
+            grad_output[i].data_ptr<float>(),
+            indices[i].data_ptr<int32_t>(),
+            grad_weight[i].data_ptr<float>(),
+            seq_length,
+            embed_dim,
+            num_embeddings,
+            total_elements,
+            padding_idx
+        );
+        
+        cudaStreamSynchronize(streams[i]);
+    }
+
+    for(int b = 0; b < batch_size; b++){
+
+        cudaStreamSynchronize(streams[b]);
+        cudaStreamDestroy(streams[b]);
+    }
+
+    return grad_weight.sum(0);
 }

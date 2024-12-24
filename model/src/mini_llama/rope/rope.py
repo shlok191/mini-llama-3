@@ -38,13 +38,13 @@ class RoPEmbedding(nn.Module):
             torch.Tensor: Transformed tensor with same shape as input (seq_len, dim)
         """
         
-        seq_len, dim = x.shape
+        batch_size, seq_len, dim = x.shape
         assert dim == self.dim, f"Input dimension {dim} must match embedding dimension {self.dim}"
         
-        # Create position indices for the sequence
+        # Creating position indices for the sequence
         positions = torch.arange(seq_len, device=x.device).float()
         
-        # Compute rotation angles for each position and frequency
+        # Computing rotation angles for each position and frequency
         # Shape: (seq_len, dim//2)
         angles = positions.unsqueeze(1) * self.inv_frequencies.cuda()
         
@@ -52,16 +52,20 @@ class RoPEmbedding(nn.Module):
         sin = torch.sin(angles)  # (seq_len, dim//2)
         cos = torch.cos(angles)  # (seq_len, dim//2)
         
+        # Expanding to accommodate for batch dimension
+        sin = sin.unsqueeze(0).expand(batch_size, -1, -1)
+        cos = cos.unsqueeze(0).expand(batch_size, -1, -1)
+        
         # Split input into even and odd dimensions
-        x_even = x[:, ::2]  # (seq_len, dim//2)
-        x_odd = x[:, 1::2]  # (seq_len, dim//2)
+        x_even = x[..., ::2]  # (batch_dim, seq_len, dim//2)
+        x_odd = x[..., 1::2]  # (batch_dim, seq_len, dim//2)
         
         # Apply rotation using the rotation matrix:
         # [cos θ, -sin θ]
         # [sin θ,  cos θ]
         rotated = torch.empty_like(x)
         
-        rotated[:, ::2] = x_even * cos - x_odd * sin    # Real part
-        rotated[:, 1::2] = x_even * sin + x_odd * cos   # Imaginary part
+        rotated[..., ::2] = x_even * cos - x_odd * sin    # Real part
+        rotated[..., 1::2] = x_even * sin + x_odd * cos   # Imaginary part
         
         return rotated

@@ -158,7 +158,7 @@ def test_attention_implementation(num_runs = 10):
     
     print(f"CUDA implementation time: {cuda_time_mean * 1000:.3f} ms")
     print(f"PyTorch implementation time: {pytorch_time_mean * 1000:.3f} ms")
-    print(f"Speedup: {pytorch_time/cuda_time:.2f}x")
+    print(f"Speedup: {pytorch_time_mean/cuda_time_mean:.2f}x")
     
 def test_attention_backward(num_runs=100):
     
@@ -329,7 +329,7 @@ def test_attention_backward(num_runs=100):
     
     print(f"CUDA implementation time: {cuda_time_mean * 1000:.3f} ms")
     print(f"PyTorch implementation time: {pytorch_time_mean * 1000:.3f} ms")
-    print(f"Speedup: {pytorch_time/cuda_time:.2f}x")
+    print(f"Speedup: {pytorch_time_mean/cuda_time_mean:.2f}x")
     
 if __name__ == "__main__":
     

@@ -19,9 +19,9 @@ class MLP(nn.Module):
         self.intermediate_size = intermediate_size
         
         # Utilizing the custom linear layers :)
-        self.gate_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=False).to("cuda:0")
-        self.up_proj = nn.Linear(self.hidden_size, self.intermediate_size, bias=False).to("cuda:0")
-        self.down_proj = nn.Linear(self.intermediate_size, self.hidden_size, bias=False).to("cuda:0")
+        self.gate_proj = Linear(self.hidden_size, self.intermediate_size).to("cuda:0")
+        self.up_proj = Linear(self.hidden_size, self.intermediate_size).to("cuda:0")
+        self.down_proj = Linear(self.intermediate_size, self.hidden_size).to("cuda:0")
         
         # The activation function (could be ReLU, LeakyReLU, orrrr SwiGLU?)
         self.activation_func = activation_fn

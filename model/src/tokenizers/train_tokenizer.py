@@ -29,7 +29,7 @@ def load_pirate_stories(path: str = "/Users/sabarwal/work/projects/mini-llama-3/
         
     return stories
 
-def train_tokenizer(stories: list, vocab_size: int = 8192, iterations: int = 8192 - 99) -> MiniLlamaTokenizer:
+def train_tokenizer(stories: list, vocab_size: int = 8192, iterations: int = 8192 - 98) -> MiniLlamaTokenizer:
     """Trains our custom BPE tokenizer on the dataset provided
     
     Args:

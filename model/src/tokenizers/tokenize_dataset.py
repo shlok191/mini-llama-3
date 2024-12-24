@@ -43,7 +43,7 @@ def create_sequences_from_tokens(
         while(curr_end <= eos_position):
             
             sequence = story[curr_start:curr_end]
-            sequence = sequence + [padding_idx] * (512 - sequence_length)
+            sequence = sequence + [padding_idx] * (320 - sequence_length)
             
             # Pushing forward our indices
             curr_end += stride
@@ -113,10 +113,10 @@ def tokenize_dataset(
     tokenized_dataset = {"original": [], "pirate": []}
     
     # Taking all of the available stories!
-    # for story in tqdm(dataset["pirate"], desc='🏴‍☠️ Tokenizin\' Stories!', colour='green'):
+    for story in tqdm(dataset["pirate"], desc='🏴‍☠️ Tokenizin\' Stories!', colour='green'):
         
-    #     story = story.replace('"', '\"')            
-    #     tokenized_dataset["pirate"].append(tokenizer.encode(story, 512))
+        story = story.replace('"', '\"')            
+        tokenized_dataset["pirate"].append(tokenizer.encode(story, 512))
     
     # Taking all of the available original stories!
     for story in tqdm(dataset["original"], desc='Tokenizing the original TinyStories! :)', colour='green'):
@@ -129,12 +129,12 @@ def tokenize_dataset(
         'original_tokens': tokenized_dataset["original"],
     })
     
-    # pirate_df = pd.DataFrame({
-    #     'pirate_tokens': tokenized_dataset["pirate"],
-    # })
+    pirate_df = pd.DataFrame({
+        'pirate_tokens': tokenized_dataset["pirate"],
+    })
     
     original_df.to_parquet(output_path.replace(".json", "_original.parquet"))
-    #pirate_df.to_parquet(output_path.replace(".json", "_pirate.parquet"))
+    pirate_df.to_parquet(output_path.replace(".json", "_pirate.parquet"))
     
     # Save to Parquet
     print(f"Tokenized dataset saved to {output_path}!")

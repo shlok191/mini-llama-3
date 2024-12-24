@@ -5,10 +5,12 @@ from torch.autograd import Function
 from mini_llama.rope import RoPEmbedding
 from mini_llama.cuda import multi_attention_forward, multi_attention_backward
 
+from typing import List
+
 class FunctionalAttention(Function):
     
     @staticmethod
-    def forward(ctx, query, key, value):
+    def forward(ctx, query, key, value, curr_seq_lens):
         """Performs the forward pass for the attention implementation
 
         Args:
@@ -22,10 +24,10 @@ class FunctionalAttention(Function):
         """
         
         # Calling our in-house attention mechanism!
-        output, max_rows, sum_rows = multi_attention_forward(query, key, value)
+        output, max_rows, sum_rows = multi_attention_forward(query, key, value, curr_seq_lens)
         
         # Storing the necessary values for backpropogation
-        ctx.save_for_backward(query, key, value, output, max_rows, sum_rows)
+        ctx.save_for_backward(query, key, value, output, max_rows, sum_rows, curr_seq_lens)
         
         return output
     
@@ -42,10 +44,10 @@ class FunctionalAttention(Function):
         """
         
         # Fetching the saved tensors for backpropogation
-        query, key, value, output, max_rows, sum_rows = ctx.saved_tensors
+        query, key, value, output, max_rows, sum_rows, curr_seq_lens = ctx.saved_tensors
         
         # Once again using the custom CUDA implementation which from my tests is ~ 3x faster than PyTorch implementation :)    
-        grad_query, grad_key, grad_value = multi_attention_backward(query, key, value, output, grad_output, max_rows, sum_rows)
+        grad_query, grad_key, grad_value = multi_attention_backward(query, key, value, output, grad_output, max_rows, sum_rows, curr_seq_lens)
         
         return grad_query, grad_key, grad_value
     
@@ -76,10 +78,10 @@ class MultiHeadedAttention(nn.Module):
         self.head_dim = hidden_size // num_heads
         
         # Defining the linear layers
-        self.q_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
-        self.k_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
-        self.v_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
-        self.o_proj = nn.Linear(self.hidden_size, self.hidden_size, bias=False)
+        self.q_proj = Linear(self.hidden_size, self.hidden_size)
+        self.k_proj = Linear(self.hidden_size, self.hidden_size)
+        self.v_proj = Linear(self.hidden_size, self.hidden_size)
+        self.o_proj = Linear(self.hidden_size, self.hidden_size)
     
         # Defining rotary embedding and dropout layer
         self.rope = RoPEmbedding(dim=self.rope_dim)
@@ -88,11 +90,9 @@ class MultiHeadedAttention(nn.Module):
         # Storing the Functional implementation
         self.attention_fn = FunctionalAttention.apply
         
-    def forward(self, X: torch.Tensor):
+    def forward(self, X: torch.Tensor, curr_seq_lens: List[int]):
     
         assert not torch.isnan(X).any()
-        
-        seq_length = X.shape[0]
         
         # Applying dropout to the given input value
         X = self.dropout(X)
@@ -106,27 +106,9 @@ class MultiHeadedAttention(nn.Module):
         query = self.rope.forward(query)
         key = self.rope.forward(key)
 
-        # Calling our in-house attention implementation
-        # attn_output = self.attention_fn(query, key, value)
-
-        scaling_factor = 16
-        
-        attention_scores = torch.matmul(query, key.transpose(-2, -1))
-        attention_scores = attention_scores / scaling_factor
-        
-        attention_scores_max, _ = torch.max(attention_scores, dim=-1, keepdim=True)
-        exp_attention = torch.exp(attention_scores - attention_scores_max)
-        
-        # Calculate softmax denominators (sum of exponentials)
-        attention_sum = torch.sum(exp_attention, dim=-1, keepdim=True)
-        
-        # Compute final attention probabilities with numerical stability safeguard
-        epsilon = 1e-8  # Small constant to prevent division by zero
-        attention_probs = exp_attention / (attention_sum + epsilon)
-        
-        output = torch.matmul(attention_probs, value)
-        
-        attn_output = self.o_proj(output)
+        # Calling our in-house attention implementation!
+        attn_output = self.attention_fn(query, key, value, curr_seq_lens)
+        final_output = self.o_proj(attn_output)
         
         # Merging the heads along the embedding dimension!
-        return attn_output
+        return final_output

@@ -4,84 +4,91 @@ import time
 
 def test_embedding_forward():
     """
-    Tests the raw CUDA embedding forward function by comparing its output
-    to PyTorch's native implementation. This test verifies both correctness
-    and performance of the embedding lookup operation.
+    Tests the CUDA embedding forward function with batch support by comparing 
+    its output to PyTorch's native implementation. This test verifies both 
+    correctness and performance of batched embedding lookups.
     """
-    print("\n=== Testing Embedding Forward CUDA Function ===")
+    print("\n=== Testing Batched Embedding Forward CUDA Function ===")
     
-    # Initialize test dimensions that are representative of real usage
+    # Initialize test dimensions that represent real usage scenarios
+    batch_size = 32      # Number of sequences in each batch
     vocab_size = 1024    # Size of the vocabulary
     embed_dim = 256      # Dimension of each embedding vector
-    seq_length = 512     # Length of the input sequence
+    seq_length = 512     # Length of each sequence in the batch
     
-    # Create test tensors with controlled data for easier debugging
-    # The embedding table contains the vectors we'll look up
+    # Create embedding table that will be shared across the batch
     table = torch.randn(vocab_size, embed_dim, 
                        dtype=torch.float32,
                        device='cuda')
     
-    # Create indices that will exercise different parts of the embedding table
-    # We include edge cases like first and last indices
-    indices = torch.cat([
-        torch.zeros(1, dtype=torch.int32),                     # First index
-        torch.randint(1, vocab_size-1, (seq_length-2,),        # Random middle indices
-                     dtype=torch.int32),
-        torch.tensor([vocab_size-1], dtype=torch.int32)        # Last index
-    ]).cuda()
+    # Create batched indices tensor, including edge cases in each batch
+    indices = torch.zeros(batch_size, seq_length, dtype=torch.int32, device='cuda')
+    for b in range(batch_size):
+        # First token is always 0 (edge case)
+        indices[b, 0] = 0
+        # Middle tokens are random
+        indices[b, 1:-1] = torch.randint(1, vocab_size-1, (seq_length-2,), dtype=torch.int32)
+        # Last token is vocab_size-1 (edge case)
+        indices[b, -1] = vocab_size-1
+    
+    print(f"Input shapes:")
+    print(f"Indices: {indices.shape} (batch_size × sequence_length)")
+    print(f"Embedding table: {table.shape} (vocab_size × embedding_dim)")
     
     # Compute embeddings using our CUDA implementation
-    print("Computing CUDA embeddings...")
+    print("\nComputing CUDA embeddings...")
     cuda_output = embedding_forward(indices, table)
+    print(f"CUDA output shape: {cuda_output.shape}")
     
-    # Compute expected embeddings using PyTorch for comparison
+    # Compute expected embeddings using PyTorch
     print("Computing PyTorch embeddings for comparison...")
     torch_embed = torch.nn.Embedding.from_pretrained(table)
     torch_output = torch_embed(indices)
+    print(f"PyTorch output shape: {torch_output.shape}")
     
-    # Compare the results between implementations
+    # Compare results between implementations
     max_diff = torch.max(torch.abs(cuda_output - torch_output))
     print(f"\nMaximum difference in outputs: {max_diff:.6f}")
     
-    # Check if results are close within acceptable tolerances
+    # Check if results match within tolerances
     is_close = torch.allclose(cuda_output, torch_output, rtol=1e-3, atol=1e-3)
     
     if is_close:
-        print("✅ Embedding lookup matches PyTorch implementation")
+        print("✅ Batched embedding lookup matches PyTorch implementation")
     else:
-        print("❌ Embedding mismatch detected")
+        print("❌ Batched embedding mismatch detected")
         print("\nDetailed error analysis:")
         print(f"Mean absolute error: {torch.mean(torch.abs(cuda_output - torch_output)):.6f}")
         print(f"Standard deviation of error: {torch.std(torch.abs(cuda_output - torch_output)):.6f}")
         
-        # If there's a mismatch, show specific examples to help debugging
-        different_indices = torch.where(torch.abs(cuda_output - torch_output).sum(dim=1) > 1e-3)[0]
-        if len(different_indices) > 0:
-            idx = different_indices[0].item()
-            token_id = indices[idx].item()
-            print(f"\nExample mismatch for token_id {token_id} at sequence position {idx}:")
-            print(f"CUDA output: {cuda_output[idx][:5]}")
-            print(f"PyTorch output: {torch_output[idx][:5]}")
-            print(f"Original embedding: {table[token_id][:5]}")
+        # Show specific examples from different batches if there's a mismatch
+        different_positions = torch.where(torch.abs(cuda_output - torch_output).sum(dim=2) > 1e-3)
+        if len(different_positions[0]) > 0:
+            batch_idx = different_positions[0][0].item()
+            seq_idx = different_positions[1][0].item()
+            token_id = indices[batch_idx, seq_idx].item()
+            print(f"\nExample mismatch in batch {batch_idx}, position {seq_idx}, token_id {token_id}:")
+            print(f"CUDA output: {cuda_output[batch_idx, seq_idx, :5]}")
+            print(f"PyTorch output: {torch_output[batch_idx, seq_idx, :5]}")
+            print(f"Original embedding: {table[token_id, :5]}")
     
-    # Verify specific properties that should hold
+    # Verify embedding properties across batches
     print("\nVerifying embedding properties...")
+    for b in range(min(3, batch_size)):  # Check first few batches
+        for i in range(min(3, seq_length)):  # Check first few positions
+            token_id = indices[b, i].item()
+            assert torch.allclose(cuda_output[b, i], table[token_id], rtol=1e-3, atol=1e-3), \
+                f"Mismatch in batch {b}, position {i} for token {token_id}"
+    print("✅ Direct lookup verification passed for sampled batch positions")
     
-    # Check that lookups match the original table
-    for i in range(min(5, seq_length)):  # Check first few indices
-        token_id = indices[i].item()
-        assert torch.allclose(cuda_output[i], table[token_id], rtol=1e-3, atol=1e-3), \
-            f"Mismatch in direct lookup for token {token_id}"
-    print("✅ Direct lookup verification passed")
-    
-    # Performance testing with multiple runs for stable measurements
+    # Performance testing
     print("\nPerformance testing...")
     num_runs = 100
     cuda_times = []
     torch_times = []
     
-    # Time CUDA implementation
-    print(f"Running CUDA implementation ({num_runs} times)...")
+    # Time CUDA implementation with batching
+    print(f"Running batched CUDA implementation ({num_runs} times)...")
     for _ in range(num_runs):
         start = torch.cuda.Event(enable_timing=True)
         end = torch.cuda.Event(enable_timing=True)
@@ -93,8 +100,8 @@ def test_embedding_forward():
         torch.cuda.synchronize()
         cuda_times.append(start.elapsed_time(end))
     
-    # Time PyTorch implementation
-    print(f"Running PyTorch implementation ({num_runs} times)...")
+    # Time PyTorch implementation with batching
+    print(f"Running batched PyTorch implementation ({num_runs} times)...")
     for _ in range(num_runs):
         start = torch.cuda.Event(enable_timing=True)
         end = torch.cuda.Event(enable_timing=True)
@@ -113,35 +120,31 @@ def test_embedding_forward():
     torch_mean = sum(torch_times) / len(torch_times)
     torch_std = (sum((x - torch_mean) ** 2 for x in torch_times) / len(torch_times)) ** 0.5
     
-    print(f"\nTiming Results (averaged over {num_runs} runs):")
+    print(f"\nBatched Timing Results (averaged over {num_runs} runs):")
     print(f"CUDA Implementation: {cuda_mean:.3f} ms ± {cuda_std:.3f} ms")
     print(f"PyTorch Implementation: {torch_mean:.3f} ms ± {torch_std:.3f} ms")
     print(f"Speedup: {torch_mean/cuda_mean:.2f}x")
     
-    # Test edge cases
-    print("\nTesting edge cases...")
+    # Test batch-specific edge cases
+    print("\nTesting batch-specific edge cases...")
     
-    # Test with sequence of all same indices
-    same_indices = torch.ones(seq_length, dtype=torch.int32, device='cuda')
-    
+    # Test with batch where all sequences are identical
+    same_indices = torch.ones(batch_size, seq_length, dtype=torch.int32, device='cuda')
     try:
         same_output = embedding_forward(same_indices, table)
-        print("✅ Passed: Handling sequence of identical indices")
-    
+        print("✅ Passed: Handling batch of identical sequences")
     except Exception as e:
-        print(f"❌ Failed: Error with identical indices: {str(e)}")
+        print(f"❌ Failed: Error with batch of identical sequences: {str(e)}")
     
-    # Test with very short sequence
-    short_indices = torch.tensor([0], dtype=torch.int32, device='cuda')
-    
+    # Test with minimal batch size and sequence length
+    tiny_indices = torch.zeros((1, 1), dtype=torch.int32, device='cuda')
     try:
-        short_output = embedding_forward(short_indices, table)
-        print("✅ Passed: Handling single-element sequence")
-        
+        tiny_output = embedding_forward(tiny_indices, table)
+        print("✅ Passed: Handling minimal batch and sequence size")
     except Exception as e:
-        print(f"❌ Failed: Error with single-element sequence: {str(e)}")
+        print(f"❌ Failed: Error with minimal batch and sequence: {str(e)}")
     
-    print("\n=== Embedding Forward Test Complete ===")
+    print("\n=== Batched Embedding Forward Test Complete ===")
     
 def test_embedding_backward():
     """
@@ -151,26 +154,33 @@ def test_embedding_backward():
     """
     print("\n=== Testing Embedding Backward CUDA Function ===")
     
-    # Initialize test dimensions
-    vocab_size = 1024   # Size of vocabulary
-    embed_dim = 1024    # Embedding dimension
-    seq_length = 512    # Length of input sequence
+    # Initialize test dimensions that represent real usage scenarios
+    batch_size = 32      # Number of sequences in each batch
+    vocab_size = 1024    # Size of the vocabulary
+    embed_dim = 256      # Dimension of each embedding vector
+    seq_length = 512     # Length of each sequence in the batch
     
-    # Create test tensors
-    # grad_output represents gradients coming from the next layer
-    grad_output = torch.randn(seq_length, embed_dim, 
-                        dtype=torch.float32,
-                        device='cuda')
-    
-    # indices represents the token IDs used in the forward pass
-    indices = torch.randint(0, vocab_size, (seq_length,), 
-                        dtype=torch.int32,
-                        device='cuda')
-    
-    # table represents the embedding weights
+    # Create embedding table that will be shared across the batch
     table = torch.randn(vocab_size, embed_dim, 
                        dtype=torch.float32,
                        device='cuda')
+    
+    # Create batched indices tensor, including edge cases in each batch
+    indices = torch.zeros(batch_size, seq_length, dtype=torch.int32, device='cuda')
+    
+    for b in range(batch_size):
+        # First token is always 0 (edge case)
+        indices[b, 0] = 0
+        # Middle tokens are random
+        indices[b, 1:-1] = torch.randint(1, vocab_size-1, (seq_length-2,), dtype=torch.int32)
+        # Last token is vocab_size-1 (edge case)
+        indices[b, -1] = vocab_size-1
+        
+    # Create test tensors
+    # grad_output represents gradients coming from the next layer
+    grad_output = torch.randn(batch_size, seq_length, embed_dim, 
+                        dtype=torch.float32,
+                        device='cuda')
     
     # Setting the padding index 0 to 0
     table[0, :] = torch.zeros(embed_dim, device='cuda', dtype=torch.float32)
@@ -263,5 +273,5 @@ def test_embedding_backward():
     print(f"Speedup: {torch_mean/cuda_mean:.2f}x")
 
 if __name__ == "__main__":
-    # test_embedding_forward()
+    #test_embedding_forward()
     test_embedding_backward()
