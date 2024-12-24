@@ -27,7 +27,8 @@ class FunctionalAttention(Function):
         output, max_rows, sum_rows = multi_attention_forward(query, key, value, curr_seq_lens)
         
         # Storing the necessary values for backpropogation
-        ctx.save_for_backward(query, key, value, output, max_rows, sum_rows, curr_seq_lens)
+        ctx.save_for_backward(query, key, value, output, max_rows, sum_rows)
+        ctx.curr_seq_lens = curr_seq_lens
         
         return output
     
@@ -44,12 +45,13 @@ class FunctionalAttention(Function):
         """
         
         # Fetching the saved tensors for backpropogation
-        query, key, value, output, max_rows, sum_rows, curr_seq_lens = ctx.saved_tensors
+        query, key, value, output, max_rows, sum_rows = ctx.saved_tensors
+        curr_seq_lens = ctx.curr_seq_lens
         
         # Once again using the custom CUDA implementation which from my tests is ~ 3x faster than PyTorch implementation :)    
         grad_query, grad_key, grad_value = multi_attention_backward(query, key, value, output, grad_output, max_rows, sum_rows, curr_seq_lens)
         
-        return grad_query, grad_key, grad_value
+        return grad_query, grad_key, grad_value, None
     
 class MultiHeadedAttention(nn.Module):
 
@@ -78,10 +80,10 @@ class MultiHeadedAttention(nn.Module):
         self.head_dim = hidden_size // num_heads
         
         # Defining the linear layers
-        self.q_proj = Linear(self.hidden_size, self.hidden_size)
-        self.k_proj = Linear(self.hidden_size, self.hidden_size)
-        self.v_proj = Linear(self.hidden_size, self.hidden_size)
-        self.o_proj = Linear(self.hidden_size, self.hidden_size)
+        self.q_proj = Linear(self.hidden_size, self.hidden_size).to("cuda")
+        self.k_proj = Linear(self.hidden_size, self.hidden_size).to("cuda")
+        self.v_proj = Linear(self.hidden_size, self.hidden_size).to("cuda")
+        self.o_proj = Linear(self.hidden_size, self.hidden_size).to("cuda")
     
         # Defining rotary embedding and dropout layer
         self.rope = RoPEmbedding(dim=self.rope_dim)

@@ -12,7 +12,7 @@ def train_mini_llama():
     # Defining our configuration for training
     config = {
         "batch_size": 64,
-        "num_workers": 4,
+        "num_workers": 8,
         "vocab_size": 8192,
         "embedding_dim": 1024,
         "num_decoder_layers": 4,
@@ -90,7 +90,8 @@ def train_mini_llama():
         devices=1,
         logger=wandb_logger,
         callbacks=callbacks,
-        gradient_clip_val=0.75
+        gradient_clip_val=0.75,
+        val_check_interval=1000
     )
 
     # Start training!

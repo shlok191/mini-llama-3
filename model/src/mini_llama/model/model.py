@@ -47,7 +47,6 @@ class MiniLlamaModel(nn.Module):
             vocab_size=vocab_size,
             embed_dims=embedding_dim,
             padding_token_index=padding_idx,
-            init_method="xavier"
         )
         
         # Defining a stack of decoder layers
@@ -76,8 +75,6 @@ class MiniLlamaModel(nn.Module):
         Returns:
             torch.Tensor: Output embeddings of shape (seq_len, hidden_size)
         """
-
-        print(input_ids.shape)
         
         # Hardcoded value to simplifiy implementation!
         assert input_ids.shape[-1] == 320
@@ -150,7 +147,7 @@ class MiniLlamaForCausalLM(L.LightningModule):
         self.lm_head = Linear(embedding_dim, vocab_size)
         
         # Weight tying to the embedding table!
-        self.lm_head.weights = nn.Parameter(self.model.embedding.embedding_table.T)  
+        self.lm_head.weight = self.model.embedding.embedding_table.T
               
     def forward(self, input_ids: torch.Tensor, labels: torch.Tensor, curr_seq_lens: List[int]) -> torch.Tensor:
         """Generates logits for each input ID
@@ -202,8 +199,6 @@ class MiniLlamaForCausalLM(L.LightningModule):
             torch.Tensor: Generated sequence of tokens including the prompt
         """
         
-        print("Beginning generation...")
-        
         # Making sure we don't exceed maximum sequence length!
         assert max_length <= 320, "Model only supports sequences up to length 320"
         
@@ -228,7 +223,7 @@ class MiniLlamaForCausalLM(L.LightningModule):
             first_pad_pos = pad_positions[0].item()
             
             with torch.no_grad():
-                logits = self.forward(current_sequence, labels=None, curr_seq_lens=[first_pad_pos])
+                logits = self.forward(current_sequence.unsqueeze(0), labels=None, curr_seq_lens=[first_pad_pos])[0]
                 
             # We only really need the last logit!
             next_token_logits = logits[first_pad_pos - 1]
@@ -275,7 +270,8 @@ class MiniLlamaForCausalLM(L.LightningModule):
         
         inputs = batch['input_ids']
         labels = batch['labels']
-        curr_seq_lens = batch['curr_seq_lens']
+        
+        curr_seq_lens = batch['curr_seq_lens'].tolist()
         
         # Processing the inputs to get our loss
         loss = self.forward(inputs, labels, curr_seq_lens)
@@ -300,7 +296,8 @@ class MiniLlamaForCausalLM(L.LightningModule):
         
         inputs = batch['input_ids']
         labels = batch['labels']
-        curr_seq_lens = batch['curr_seq_lens']
+        
+        curr_seq_lens = batch['curr_seq_lens'].tolist()
         
         loss = self.forward(inputs, labels, curr_seq_lens)
         
@@ -318,7 +315,7 @@ class MiniLlamaForCausalLM(L.LightningModule):
         if batch_idx == 0:
             
             # Taking the first sequence from batch as prompt
-            prompt = inputs[:50]
+            prompt = inputs[0][:50]
             
             # Generate continuation
             generated = self.tokenizer.decode(self.generate(
@@ -328,11 +325,17 @@ class MiniLlamaForCausalLM(L.LightningModule):
                 top_k=50
             ).cpu().tolist())
             
+            decoded_prompt = self.tokenizer.decode(prompt.cpu().tolist())
+            print(f"{'=' * 120}\n")
+            print(f"Given prompt: {decoded_prompt}\n")
+            print(f"Generated resposne: {generated}")
+            print(f"{'=' * 120}\n")
+            
             # Logging the generated text
             self.logger.experiment.log({
                "generated_samples": wandb.Table(
                    columns=["prompt", "generated"],
-                   data=[[self.tokenizer.decode(prompt.cpu().tolist()), generated]]
+                   data=[[decoded_prompt, generated]]
                )
             })
         

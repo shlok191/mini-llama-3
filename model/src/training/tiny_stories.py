@@ -118,9 +118,12 @@ class TinyStoriesDataset(Dataset):
         input_ids = self.sequences[idx]
         labels = input_ids[1:]
         
+        # Converting to Long for CrossEntropyLoss
+        labels = labels.to(torch.int64)
+        
         padding_positions = (input_ids == 0).nonzero(as_tuple=True)[0]
         curr_seq_lens = padding_positions[0].item() if len(padding_positions) > 0 else len(input_ids)
-        
+    
         return {
             "input_ids": input_ids,
             "labels": labels,
@@ -139,4 +142,4 @@ if __name__ == "__main__":
     )
     
     print(len(test_stories))
-    print(len(test_stories[0]['input_ids']))
+    print(test_stories[0]['curr_seq_lens'])
