@@ -15,6 +15,16 @@ import lightning as L
 import wandb
 from typing import List
 
+class SwiGLU(nn.Module):
+    
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+
+        x_left, x_right = x.chunk(2, dim=-1)
+        return x_left * nn.functional.silu(x_right)
+    
 class MiniLlamaModel(nn.Module):
     def __init__(
         self,
@@ -57,7 +67,7 @@ class MiniLlamaModel(nn.Module):
                 intermediate_size=mlp_layer_intermediate_dim,
                 rope_dim=context_length,
                 dropout=dropout,
-                activation_fn=nn.SiLU()
+                activation_fn=SwiGLU()
             ) for _ in range(num_decoder_layers)
         ])
         
@@ -120,15 +130,17 @@ class MiniLlamaForCausalLM(L.LightningModule):
         super().__init__()
         
         # We will monitor all hyperparams except our model :)
-        self.save_hyperparameters(ignore=["model"])
+        self.save_hyperparameters(ignore=["model", "samples_table", "tokenizer", "lm_head"])
         
-        self.learning_rate = 5e-4
-        self.weight_decay = 5e-2
-        self.max_steps = 1e6
+        self.learning_rate = 1.5e-4
+        self.weight_decay = 0.075
+        self.max_steps = 1e5
         self.tokenizer = MiniLlamaTokenizer.load(tokenizer_path)
         self.validation_step_outputs = []
         self.tokenizer_path = tokenizer_path
         
+        self.samples_table = wandb.Table(columns=['prompt', 'generated'])
+                
         # Letting the first 1000 steps involve warmup
         self.warmup_steps = 1e3
         
@@ -326,17 +338,21 @@ class MiniLlamaForCausalLM(L.LightningModule):
             ).cpu().tolist())
             
             decoded_prompt = self.tokenizer.decode(prompt.cpu().tolist())
+            
             print(f"{'=' * 120}\n")
             print(f"Given prompt: {decoded_prompt}\n")
             print(f"Generated resposne: {generated}")
             print(f"{'=' * 120}\n")
             
-            # Logging the generated text
+            # Logging the updated table
+            self.samples_table.add_data(decoded_prompt, generated)
+            
             self.logger.experiment.log({
-               "generated_samples": wandb.Table(
-                   columns=["prompt", "generated"],
-                   data=[[decoded_prompt, generated]]
-               )
+                "generated_samples": wandb.Table(
+                    columns=self.samples_table.columns, 
+                    data=self.samples_table.data
+                ),
+                "global_step": self.global_step
             })
         
         return loss
