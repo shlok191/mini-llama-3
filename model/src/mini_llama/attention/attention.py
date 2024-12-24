@@ -104,10 +104,24 @@ class MultiHeadedAttention(nn.Module):
         key = self.k_proj(X)
         value = self.v_proj(X)
         
+        # Updating shapes to assist with RoPE application
+        batch_size = X.shape[0]
+        seq_len = X.shape[1]
+        embed_dim = self.head_dim * self.num_heads
+        
+        query = query.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        key = key.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+        value = value.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1, 2)
+    
         # Applying positional embeddings to Q and K via rope
         query = self.rope.forward(query)
         key = self.rope.forward(key)
 
+        # Converting back to original shape for the attention implementation
+        query = query.transpose(1, 2).contiguous().view(batch_size, seq_len, embed_dim)
+        key = key.transpose(1, 2).contiguous().view(batch_size, seq_len, embed_dim)
+        value = value.transpose(1, 2).contiguous().view(batch_size, seq_len, embed_dim)
+    
         # Calling our in-house attention implementation!
         attn_output = self.attention_fn(query, key, value, curr_seq_lens)
         final_output = self.o_proj(attn_output)

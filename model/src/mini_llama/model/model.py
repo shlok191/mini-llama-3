@@ -21,16 +21,17 @@ class SwiGLU(nn.Module):
         super().__init__()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-
+        
         x_left, x_right = x.chunk(2, dim=-1)
-        return x_left * nn.functional.silu(x_right)
+        out = x_left * nn.functional.silu(x_right)
+        
+        return out
     
 class MiniLlamaModel(nn.Module):
     def __init__(
         self,
         vocab_size: int=8192,
         embedding_dim: int = 1024,
-        context_length: int = 1024,
         num_decoder_layers: int = 4,
         num_attn_heads: int = 4,
         mlp_layer_intermediate_dim: int = 2048,
@@ -42,7 +43,6 @@ class MiniLlamaModel(nn.Module):
         Args:
             vocab_size (int): The total amount of custom tokens we can have
             embedding_dim (int): The size of the 1D embedding vectors
-            context_length (int): The maximum amount of positional relationships supported
             num_decoder_layers (int): The number of decoder layers
             num_attn_heads (int): The number of attention heads / decoder layer
             mlp_layer_intermediate_dim (int): The intermediate dim for the MLP layer
@@ -65,7 +65,7 @@ class MiniLlamaModel(nn.Module):
                 hidden_size=embedding_dim,
                 num_heads=num_attn_heads,
                 intermediate_size=mlp_layer_intermediate_dim,
-                rope_dim=context_length,
+                rope_dim=embedding_dim // num_attn_heads,
                 dropout=dropout,
                 activation_fn=SwiGLU()
             ) for _ in range(num_decoder_layers)
@@ -73,7 +73,6 @@ class MiniLlamaModel(nn.Module):
         
         # Defining the Root-Mean-Squared Normalization at the end
         self.norm = RMSNorm(dim=embedding_dim)
-        self.rope = RoPEmbedding(dim=context_length)
         
     def forward(self, input_ids: torch.Tensor, curr_seq_lens: List[int]) -> torch.Tensor:
         """Forward pass through the model
@@ -99,7 +98,6 @@ class MiniLlamaModel(nn.Module):
         
         # # Final normalization
         hidden_states = self.norm(hidden_states)
-        hidden_states = self.rope(hidden_states)
         
         return hidden_states
 

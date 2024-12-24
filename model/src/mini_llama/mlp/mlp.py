@@ -19,9 +19,9 @@ class MLP(nn.Module):
         self.intermediate_size = intermediate_size
         
         # Utilizing the custom linear layers :)
-        self.gate_proj = Linear(self.hidden_size, self.intermediate_size).to("cuda")
-        self.up_proj = Linear(self.hidden_size, self.intermediate_size).to("cuda")
-        self.down_proj = Linear(self.intermediate_size, self.hidden_size).to("cuda")
+        self.gate_proj = Linear(self.hidden_size, self.intermediate_size * 2)
+        self.up_proj = Linear(self.hidden_size, self.intermediate_size)
+        self.down_proj = Linear(self.intermediate_size, self.hidden_size)
         
         # The activation function (could be ReLU, LeakyReLU, orrrr SwiGLU?)
         self.activation_func = activation_fn
@@ -35,6 +35,8 @@ class MLP(nn.Module):
         Returns:
             torch.Tensor: The output values
         """
+        
+        print(X.shape)
         
         # Processing X through the gate layer and the up layer
         gate_projection = self.activation_func(self.gate_proj(X))

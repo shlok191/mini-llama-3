@@ -7,8 +7,8 @@ class RoPEmbedding(nn.Module):
         """
         Initialize Rotary Position Embeddings (RoPE) for single-batch inputs.
         
-        This implementation assumes inputs will always have shape (seq_len, dim),
-        effectively treating batch size as 1 and removing that dimension entirely.
+        This implementation assumes inputs will always have shape 
+        (batch_size, num_heads, seq_len, dim),
         
         Args:
             dim (int): Embedding dimension (must be even)
@@ -31,14 +31,13 @@ class RoPEmbedding(nn.Module):
         Apply rotary position embeddings to input tensor.
         
         Args:
-            x (torch.Tensor): Input tensor of shape (seq_len, dim)
-                            No batch dimension is expected.
+            x (torch.Tensor): Input tensor of shape (batch_size, num_heads, seq_len, dim)
         
         Returns:
-            torch.Tensor: Transformed tensor with same shape as input (seq_len, dim)
+            torch.Tensor: Transformed tensor with same shape as input (batch_size, num_heads, seq_len, dim)
         """
         
-        batch_size, seq_len, dim = x.shape
+        batch_size, num_heads, seq_len, dim = x.shape
         assert dim == self.dim, f"Input dimension {dim} must match embedding dimension {self.dim}"
         
         # Creating position indices for the sequence
@@ -46,19 +45,15 @@ class RoPEmbedding(nn.Module):
         
         # Computing rotation angles for each position and frequency
         # Shape: (seq_len, dim//2)
-        angles = positions.unsqueeze(1) * self.inv_frequencies.cuda()
+        angles = positions.unsqueeze(1) * self.inv_frequencies.to(x.device)
         
         # Compute sin and cos for the rotation
-        sin = torch.sin(angles)  # (seq_len, dim//2)
-        cos = torch.cos(angles)  # (seq_len, dim//2)
-        
-        # Expanding to accommodate for batch dimension
-        sin = sin.unsqueeze(0).expand(batch_size, -1, -1)
-        cos = cos.unsqueeze(0).expand(batch_size, -1, -1)
+        sin = torch.sin(angles).unsqueeze(0).unsqueeze(1)  # (batch_size, num_heads, seq_len, dim//2)
+        cos = torch.cos(angles).unsqueeze(0).unsqueeze(1)  # (batch_size, num_heads, seq_len, dim//2)
         
         # Split input into even and odd dimensions
-        x_even = x[..., ::2]  # (batch_dim, seq_len, dim//2)
-        x_odd = x[..., 1::2]  # (batch_dim, seq_len, dim//2)
+        x_even = x[..., ::2]  # (batch_dim, num_heads, seq_len, dim//2)
+        x_odd = x[..., 1::2]  # (batch_dim, num_heads, seq_len, dim//2)
         
         # Apply rotation using the rotation matrix:
         # [cos θ, -sin θ]
