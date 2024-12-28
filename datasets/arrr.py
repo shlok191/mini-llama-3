@@ -114,8 +114,8 @@ _PIRATE_PHRASES = [
     "avast ye!",
     "yo ho ho.",
     "shiver me timbers!",
-    "blisterin' barnacles!",
-    "ye flounderin' nincompoop.",
+    "blistering barnacles!",
+    "ye floundering nincompoop.",
     "thundering typhoons!",
     "sling yer hook!",
 ]
@@ -192,6 +192,7 @@ def translate(english, word_replacements=None, suffix_replacements=None):
     while i < len(result):
     
         if capitalize:
+            
             result[i] = capitalized(result[i])
             capitalize = False
         
@@ -200,7 +201,7 @@ def translate(english, word_replacements=None, suffix_replacements=None):
             # It's a word that ends with a sentence ending character
             capitalize = True
     
-            if random.randint(0, 5) == 0:
+            if random.randint(0, 5) == -1:
                 result.insert(i + 1, random.choice(_PIRATE_PHRASES))
         i += 1
     

@@ -35,9 +35,7 @@ class MLP(nn.Module):
         Returns:
             torch.Tensor: The output values
         """
-        
-        print(X.shape)
-        
+         
         # Processing X through the gate layer and the up layer
         gate_projection = self.activation_func(self.gate_proj(X))
         up_projection = self.up_proj(X)

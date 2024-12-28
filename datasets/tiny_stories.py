@@ -31,23 +31,21 @@ def pirate_speak(text: str) -> str:
         'kid': 'cabin boy',
         'kids': 'cabin boys',
         'friend': 'matey',
-        'friends': 'crew',
-        'teacher': 'wise old salt',
+        'friends': 'mateys',
+        'teacher': 'wise old man',
         
         # Common TinyStories activities
-        'play': 'make merry',
-        'playing': "makin' merry",
         'share': 'divide the spoils',
         'help': 'lend a hand',
         'learn': 'gather wisdom',
         'sleep': 'rest in the hammock',
-        'sleeping': "restin' in the hammock",
+        'sleeping': "restin\' in the hammock",
         'eat': 'feast',
-        'eating': "feastin'",
+        'eating': "feastin\'",
         
         # Common animals in stories
         'dog': 'sea dog',
-        'cat': "ship's cat",
+        'cat': "ship\'s cat",
         'bird': 'parrot',
         'fish': 'sea creature',
         'rabbit': 'land lubber',
@@ -57,50 +55,34 @@ def pirate_speak(text: str) -> str:
         'happy': 'jolly',
         'sad': 'down in the dumps',
         'angry': 'fierce as a storm',
-        'scared': 'shiverin',
+        'scared': 'shiverin\'',
         'tired': 'beat',
         'excited': 'full of grog',
         
         # Places
-        'home': 'port',
-        'house': 'shelter',
-        'school': "captain's quarters",
-        'park': 'shore leave',
-        'store': 'trading post',
         'room': 'cabin',
-        'garden': 'land patch',
         
         # Common objects
-        'toy': 'treasure',
-        'toys': 'treasures',
-        'book': 'ships log',
-        'books': 'ships logs',
         'food': 'grub',
-        'water': 'sea water',
-        'ball': 'cannon ball',
         
         # Basic actions
         'walk': 'swagger',
-        'walking': "swaggrin'",
+        'walking': "swaggerin\'",
         'run': 'scurry',
-        'running': "scurryin'",
+        'running': "scurryin\'",
         'look': 'spy',
-        'looking': "spyin'",
+        'looking': "spyin\'",
         'say': 'declare',
         'said': 'declared',
         'think': 'reckon',
         'thought': 'reckoned',
         'want': 'fancy',
         'wanted': 'fancied',
-        'give': 'hand over',
-        'gave': 'handed over',
         
         # Common words in TinyStories
         'little': 'wee',
         'big': 'mighty',
         'small': 'tiny',
-        'new': 'fresh',
-        'good': 'fine',
         'bad': 'rotten',
         'best': 'finest',
         'favorite': 'treasured',
@@ -111,62 +93,46 @@ def pirate_speak(text: str) -> str:
         'yes': 'aye',
         'no': 'nay',
         'my': 'me',
-        'the': "th'",
         'you': 'ye',
         'your': 'yer',
         'is': 'be',
-        'are': 'be',
-        'was': 'were',
     }
     
     # Converting some common suffixes into pirate lingo
     suffix_patterns = {
-        'ing': "in'",
-        'ings': "in's",
-        'er': "arr",
-        'ers': "arrs",
+        'ing': "in\'",
+        'ings': "in\'s",
     }
     
-    text = arrr.translate(text, word_replacements=pirate_vocab, suffix_replacements=suffix_patterns)
-    
-    # Adding pirate interjections as well!
-    pirate_interjections = [
-        "Shiver me timbers! ",
-        "Blimey! ",
-        "Arr! ",
-        "Yarr! ",
-        "By Blackbeard's beard! ",
-        "Sink me! ",
-        "Blow me down! ",
-        "Avast! ",
-        "Savvy? ",
-    ]
-    
-    sentences = text.split('. ')
-    enhanced_sentences = []
-    
-    for sentence in sentences:
+    text = arrr.translate(text, word_replacements=pirate_vocab, suffix_replacements=None)
         
-        # There is a 10% chance of some of the pirate interjections popping up!
-        if sentence and random.random() < 0.1:
-            sentence = random.choice(pirate_interjections) + sentence
-        
-        enhanced_sentences.append(sentence)
-    
-    text = '. '.join(enhanced_sentences)
-    
     # Adding occasional pirate endings (about 65% chance)
     pirate_endings = [
-        " Yo ho ho!",
-        " Arr!",
+        " Batten down the hatches!",
+        " Splice the mainbrace!",
+        " Thar she blows!",
+        " Arrr!",
+        " Weigh anchor and hoist the mizzen!",
         " Savvy?",
         " Dead men tell no tales!",
-        " And that's the truth of it!",
+        " Cleave him to the brisket!",
+        " Blimey!",
+        " Blow me down!",
+        " Avast ye!",
+        " Yo ho ho.",
+        " Shiver me timbers!",
+        " Blistering barnacles!",
+        " Ye floundering nincompoop.",
+        " Thundering typhoons!",
+        " Sling yer hook!",
+        " Yo ho ho!",
+        " And that\'s the truth of it!",
         " On me word as a pirate!",
-        " Or I'll walk the plank!",
+        " Or I\'ll walk the plank!",
         " May the wind be at our backs!"
     ]
     
+    # There is a 65%  chance of a pirate ending! :)
     if random.random() < 0.65:
         text = text + random.choice(pirate_endings)
     

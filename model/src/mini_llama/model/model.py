@@ -131,7 +131,7 @@ class MiniLlamaForCausalLM(L.LightningModule):
         self.save_hyperparameters(ignore=["model", "samples_table", "tokenizer", "lm_head"])
         
         self.learning_rate = 1.5e-4
-        self.weight_decay = 0.075
+        self.weight_decay = 0.1
         self.max_steps = 1e5
         self.tokenizer = MiniLlamaTokenizer.load(tokenizer_path)
         self.validation_step_outputs = []
@@ -339,7 +339,7 @@ class MiniLlamaForCausalLM(L.LightningModule):
             
             print(f"{'=' * 120}\n")
             print(f"Given prompt: {decoded_prompt}\n")
-            print(f"Generated resposne: {generated}")
+            print(f"Generated response: {generated}")
             print(f"{'=' * 120}\n")
             
             # Logging the updated table
@@ -354,7 +354,6 @@ class MiniLlamaForCausalLM(L.LightningModule):
             })
         
         return loss
-        
         
     def on_validation_epoch_end(self):
         
@@ -376,14 +375,14 @@ class MiniLlamaForCausalLM(L.LightningModule):
             self.model.parameters(),
             lr=self.learning_rate,
             weight_decay=self.weight_decay,
-            betas=(0.9, 0.95)  # Using betas recommended for LLMs
+            betas=(0.9, 0.95)
         )
         
         # Creating a scheduler with Cosine Annealing to update the LR as we go through
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer,
-            T_max=self.max_steps - self.warmup_steps,
-            eta_min=self.learning_rate * 0.1
+            T_max=self.max_steps // 2,
+            eta_min=self.learning_rate * 0.25
         )
         
         return {

@@ -85,9 +85,9 @@ def load_pirate_stories(path: str = "/Users/sabarwal/work/projects/mini-llama-3/
             story = json.loads(line)
         
             # Only keeping 33% of the original stories!
-            if count % 3 == 0:
+            if count % 3 != 0:
                 stories["original"].append(story['original'])
-                
+            
             stories["pirate"].append(story['pirate'])
             
             count += 1
@@ -142,7 +142,7 @@ def tokenize_dataset(
 if __name__ == "__main__":
     
     # Loading in the tokenizer
-    tokenizer = MiniLlamaTokenizer.load("/root/mini-llama-3/model/src/tokenizers/pirate_tokenizer_8K.json")
+    tokenizer = MiniLlamaTokenizer.load("/root/mini-llama-3/model/src/tokenizers/tokenizer_configs/pirate_tokenizer_8K.json")
     
     # Tokenizing the training set first
     print("Tokenizing the training set...\n")

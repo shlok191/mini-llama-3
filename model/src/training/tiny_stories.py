@@ -13,7 +13,7 @@ def create_sequences_from_tokens(
         column_name: str = "original_tokens",
         sequence_length: int = 256,
         max_sequence_length: int = 320,
-        stride: int = 32,
+        stride: int = 42,
         padding_idx: int = 0,
         eos_idx: int = 2):
     """Generates uniform length sequences from a tokenized dataset

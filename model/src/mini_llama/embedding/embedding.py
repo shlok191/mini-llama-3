@@ -43,7 +43,7 @@ class Embedding(nn.Module):
         self.padding_token_value = padding_token_index
         
         # Creating the embedding lookup table
-        self.embedding_table = torch.nn.Parameter(torch.empty(vocab_size, embed_dims, dtype=torch.float32), requires_grad=True).to("cuda:0")
+        self.embedding_table = torch.nn.Parameter(torch.empty(vocab_size, embed_dims, dtype=torch.float32), requires_grad=True)
         
         # Initializing the table
         self._initialize_table(init_method, padding_token_index)
