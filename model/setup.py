@@ -112,7 +112,8 @@ setup(
         "fastparquet>=2024.0",
         "lightning>=1.9", # For checkpointing and connecting to W&B  
         "wandb>=0.19.0",  # For visualizing training statistics :)
-        "tqdm>=4.6.0"     # Adds fancy progress bars
+        "tqdm>=4.6.0",    # Adds fancy progress bars
+        "fastapi>=0.95"   # Server side helper APIs!
     ],
     
     # Additional package data
