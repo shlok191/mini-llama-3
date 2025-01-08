@@ -28,12 +28,12 @@ COPY website/server /app/server
 
 WORKDIR /app/server
 
-# Make port 8000 available to the world outside this container
-EXPOSE 8000
+# Making a port available
+EXPOSE 2000
 
 # Set environment variables for CUDA
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
 # Run uvicorn when the container launches
-CMD ["uvicorn", "stream_generation:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "stream_generation:app", "--host", "0.0.0.0", "--port", "2000"]
