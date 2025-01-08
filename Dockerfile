@@ -16,7 +16,7 @@ RUN echo 'source $HOME/.cargo/env' >> $HOME/.bashrc
 # Add Rust to the PATH
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-RUN pip install setuptools-rust torch
+RUN pip install setuptools-rust torch uvicorn
 
 COPY model /app/model
 WORKDIR /app/model

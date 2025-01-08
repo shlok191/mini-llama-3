@@ -4,14 +4,17 @@ import React, { useState } from 'react';
 interface RecordsContext {
   prompt: string;
   setPrompt: React.Dispatch<React.SetStateAction<string>>;
-  generate: () => void;
+  generate: boolean;
+  setGenerate: React.Dispatch<React.SetStateAction<boolean>>;
+
 }
 
 // Exporting the Records for future use :)
 const Records = React.createContext<RecordsContext>({
   prompt: '',
   setPrompt: () => {},
-  generate: () => {},
+  generate: false,
+  setGenerate: () => {}
 });
 
 export const RecordsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -19,16 +22,14 @@ export const RecordsProvider: React.FC<{ children: React.ReactNode }> = ({ child
   console.log("RecordsProvider rendering"); // Added to help debug
 
   const [prompt, setPrompt] = useState('');
-
-  const generate = () => {
-    console.log('Generating with prompt:', prompt);
-  }
+  const [generate, setGenerate] = useState(false);
 
   return (
     <Records.Provider value={{
       prompt,
       setPrompt, 
-      generate
+      generate,
+      setGenerate
     }}>
       {children}
     </Records.Provider>

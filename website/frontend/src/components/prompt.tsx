@@ -8,7 +8,7 @@ interface PromptProps {
 const Prompt: React.FC<PromptProps> = ({ className = '' }) => {
 
     // Defining a state for the prompt
-    const { prompt, setPrompt, generate } = useContext(Records);
+    const { prompt, setPrompt, generate, setGenerate } = useContext(Records);
     
     const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
         setPrompt(event.target.value);
@@ -18,7 +18,11 @@ const Prompt: React.FC<PromptProps> = ({ className = '' }) => {
     const handleSubmit = () => {
         
         if (prompt.trim()) {
-            generate();
+
+            // Do not do anything if we are currently generating!
+            if(generate !== true){
+                setGenerate(true);
+            }
         }
     };
 

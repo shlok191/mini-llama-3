@@ -429,11 +429,8 @@ impl BPETokenizer {
 
         // Finally, remove all occurences of the </w> token
         text.join("")
-            .split("</w>")
-            .filter(|s| !s.is_empty())
-            .collect::<Vec<_>>()
-            .join(" ")
             .trim()
+            .replace("</w>", " ")
             .to_string()
     }
 

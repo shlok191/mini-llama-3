@@ -34,7 +34,7 @@ model_config = {
     "mlp_layer_intermediate_dim": 2048,
     "dropout": 0.1,
     "padding_idx": 0,
-    "tokenizer_path": "/home/bismarck/mini-llama-3/model/src/tokenizers/tokenizer_configs/pirate_tokenizer_8K.json"
+    "tokenizer_path": "/app/model/src/tokenizers/tokenizer_configs/pirate_tokenizer_8K.json"
 }
 
 # Fetching in the Rust tokenizer!
@@ -43,7 +43,7 @@ tokenizer = MiniLlamaTokenizer.load(model_config["tokenizer_path"])
 # Loading in the vanilla TinyStories LLM :)
 vanilla_model = MiniLlamaForCausalLM(**model_config)
 
-vanilla_state_dict = torch.load("/home/bismarck/mini-llama-3/checkpoints/vanilla.pth", weights_only=True)
+vanilla_state_dict = torch.load("/app/checkpoints/vanilla.pth", weights_only=True)
 vanilla_model.load_state_dict(vanilla_state_dict)
 vanilla_model = vanilla_model.to("cuda")
 vanilla_model.eval()
@@ -51,7 +51,7 @@ vanilla_model.eval()
 # Loading in the finetuned blackbeard LLM!
 blackbeard_model = MiniLlamaForCausalLM(**model_config)
 
-blackbeard_state_dict = torch.load("/home/bismarck/mini-llama-3/checkpoints/blackbeard.pth", weights_only=True)
+blackbeard_state_dict = torch.load("/app/checkpoints/blackbeard.pth", weights_only=True)
 blackbeard_model.load_state_dict(blackbeard_state_dict)
 blackbeard_model = blackbeard_model.to("cuda")
 blackbeard_model.eval()

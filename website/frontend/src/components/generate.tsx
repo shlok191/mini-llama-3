@@ -8,7 +8,6 @@ interface GenerativeBoxProps {
     model: 'vanilla' | 'blackbeard';
     temperature: number;
     top_k: number;
-    prompt: string;
     typingSpeed: number;
     fadeInDuration: number;
     className: string;
@@ -29,20 +28,19 @@ const GenerativeBox: React.FC<GenerativeBoxProps> = ({
 
     // Defining some stateful variables for dynamic prints :)
     const [generatedText, setGeneratedText] = useState<string>('');
-    const [isGenerating, setIsGenerating] = useState<boolean>(false);
-    const [shouldGenerate, setShouldGenerate] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
 
     const textContainerRef = useRef<HTMLDivElement>(null);
     const previousTextLength = useRef(0);
 
     // Fetching the prompt from the global context
-    const { prompt, generate } = useContext(Records);
+    const { prompt, generate, setGenerate } = useContext(Records);
 
     const startGeneration = useCallback(async () => {
 
+        console.log("Beginning generation...")
+
         // Starting from a clean state
-        setIsGenerating(true);
         setGeneratedText('');
         setError(null);
 
@@ -51,7 +49,6 @@ const GenerativeBox: React.FC<GenerativeBoxProps> = ({
             // Getting our beautiful stream of tokens!
             const stream = await LLMService.generateText(model, temperature, top_k, prompt);
             const reader = stream.getReader();
-            const decoder = new TextDecoder();
 
             let fullText = prompt + ' ';
 
@@ -63,15 +60,13 @@ const GenerativeBox: React.FC<GenerativeBoxProps> = ({
                     if (done) {
                         
                         // onTextGenerated will likely show the time taken for generation
-                        setIsGenerating(false);
                         if (onTextGenerated) onTextGenerated(fullText);
                         return;
                     }
 
-                    const chunk = decoder.decode( value, { stream : true });
-                    fullText += chunk;
+                    fullText += value;
 
-                    setGeneratedText(prevText => prevText + chunk);
+                    setGeneratedText(prevText => prevText + value);
 
                     // Reload the function until we're done!
                     read();
@@ -80,9 +75,7 @@ const GenerativeBox: React.FC<GenerativeBoxProps> = ({
             
             // Start reading :)
             read();
-
-            // This means we can generate again after!
-            setShouldGenerate(true);
+            setGenerate(false);
         }
 
         catch (error) {
@@ -91,26 +84,31 @@ const GenerativeBox: React.FC<GenerativeBoxProps> = ({
             console.error(error);
             
             setError(error instanceof Error ? error.message : String(error));
-            setIsGenerating(false);
+            setGenerate(false);
         }
-    }, [model, temperature, top_k, prompt, onTextGenerated]);
+    }, [generate]);
 
 
     // We start generation once the prompt is generated
     useEffect (() => {
 
-        if (shouldGenerate === false){
+        console.log("Current prompt", prompt)
+
+        if (prompt !== '' && generate === true){
+            
+            console.log("Entered here!")
             
             // Beginning generation now!
-            setShouldGenerate(true);
             startGeneration();
         }
 
-    }, [generate, shouldGenerate, startGeneration]);
+    }, [generate, prompt]);
 
     // Defining an effect for having our text fade in and out!
     useEffect(() => {
-
+        
+        console.log("I got called!")
+        
         if (textContainerRef.current == null) return;
         
         const newTextLength = generatedText.length;
@@ -178,7 +176,7 @@ const GenerativeBox: React.FC<GenerativeBoxProps> = ({
                 ref={textContainerRef}
                 className="whitespace-pre-wrap break-words"
                 aria-live="polite"
-                aria-busy={isGenerating}
+                aria-busy={generate}
             />
           
             {error && (
@@ -187,7 +185,7 @@ const GenerativeBox: React.FC<GenerativeBoxProps> = ({
                 </div>
             )}
           
-            {isGenerating && (
+            {generate && (
                 <div className="mt-2 text-sm text-gray-500">
                 Generating...
                 </div>

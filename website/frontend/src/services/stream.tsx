@@ -8,6 +8,8 @@ const LLMService = {
 
         try {
             
+            console.debug('Sending request with:', { model, temperature, top_k, prompt });
+
             const response = await fetch(`${SERVER_URL}/generation`, {
                 method: 'POST',
                 headers: {
@@ -42,14 +44,17 @@ const LLMService = {
 
                         // Keep reading as long as we can
                         const { done, value } = await reader.read();
-
+                        
                         if (done) {
                             controller.close();
                             break;
                         }
                         
-                        // Add the newest token to the controller
-                        controller.enqueue(decoder.decode(value, { stream: true }));
+                        try {
+                            controller.enqueue(decoder.decode(value, { stream: true }));
+                        } catch (decodeError) {
+                            console.error('Decoding error:', decodeError, 'Value:', Array.from(value));
+                        }
                     }
                 }
             });

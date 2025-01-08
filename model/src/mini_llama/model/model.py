@@ -198,7 +198,7 @@ class MiniLlamaForCausalLM(L.LightningModule):
         temperature: float = 1.0,
         top_k: int = 50,
         eos_token_id: int = 2
-    ) -> Generator[int, None]:
+    ) -> Generator[int, None, None]:
         
         """Generates the model output in a streaming fashion!
         
