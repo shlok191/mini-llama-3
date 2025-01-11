@@ -1,13 +1,77 @@
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+.vanilla-ui {
+    --primary-color: #F2EFEB;
+    --secondary-color: #e7f2f9;
+    --button-color: #F2EFEB;
+    --button-text-color: #2c3e50;
+    --title-font-family: 'Patrick Hand', cursive;
+    --font-family: 'Patrick Hand', cursive;
+    --serious-font-family: 'Nunito', sans-serif;
+    --card-background: #ffffff;
+    --pillar-background: #F2EFEB;
+    --common-text-color: #2c3e50;
+    --prompt-box-color: #F2EFEB;
+    
+    transition: 
+        --primary-color var(--transition-duration) ease,
+        --secondary-color var(--transition-duration) ease,
+        --button-color var(--transition-duration) ease,
+        --button-text-color var(--transition-duration) ease,
+        --font-family var(--transition-duration) ease,
+        --pillar-background var(--transition-duration) ease;
+}
+  
+.pirate-ui {
+    --primary-color: #333333;
+    --secondary-color: #4A301F; 
+    --button-color: #333333;
+    --button-text-color: #fff;
+    --title-font-family: 'Pirata One', cursive;
+    --font-family: 'IM Fell English SC', serif;
+    --pillar-background: #4A301F;
+    --card-background: #654321;
+    --common-text-color: #ffffff;
+    --prompt-box-color: #333333;
+
+    transition:
+        --primary-color var(--transition-duration) ease,
+        --secondary-color var(--transition-duration) ease,
+        --button-color var(--transition-duration) ease,
+        --button-text-color var(--transition-duration) ease,
+        --font-family var(--transition-duration) ease,
+        --pillar-background var(--transition-duration) ease;
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+body {
+    font-family: var(--font-family);
+    background-color: var(--card-background);
+    color: var(--common-text-color);
+    transition: 
+        background-color var(--transition-duration) ease, 
+        color var(--transition-duration) ease, 
+        font-family var(--transition-duration) ease;
+}
+
+.prompt-input {
+    padding: 10px;
+    margin-right: 10px;
+    border: 1px solid var(--primary-color);
+    border-radius: var(--common-border-radius);
+    transition: border-color var(--transition-duration) ease;
+}
+
+.prompt-button {
+    padding: 10px 15px;
+    background-color: var(--button-color);
+    color: var(--button-text-color);
+    border: none;
+    border-radius: var(--common-border-radius);
+    cursor: pointer;
+    transition: background-color var(--transition-duration) ease, color var(--transition-duration) ease;
+}
+
+.slider {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    width: 100%;
 }

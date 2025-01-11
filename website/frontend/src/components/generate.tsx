@@ -6,192 +6,183 @@ import Records from '../contexts/records.tsx';
 interface GenerativeBoxProps {
 
     model: 'vanilla' | 'blackbeard';
-    temperature: number;
-    top_k: number;
     typingSpeed: number;
     fadeInDuration: number;
-    className: string;
-
     onTextGenerated?: (text: string) => void;
 }
 
-// Hopefully this ends up looking pretty good :)
-const GenerativeBox: React.FC<GenerativeBoxProps> = ({ 
-    model = 'vanilla', 
-    temperature = 0.75,
-    top_k = 8,
-    className = 'vanilla-ui',
+const GenerativeBox: React.FC<GenerativeBoxProps> = ({
+    model = 'vanilla',
     onTextGenerated,
-    typingSpeed = 10,
-    fadeInDuration = 50,
+    typingSpeed = 30,
+    fadeInDuration = 20,
 }) => {
-
-    // Defining some stateful variables for dynamic prints :)
     const [generatedText, setGeneratedText] = useState<string>('');
     const [error, setError] = useState<string | null>(null);
 
     const textContainerRef = useRef<HTMLDivElement>(null);
-    const previousTextLength = useRef(0);
+    const currentTextIndex = useRef(0); // Keep track of processed chars index
+    const animationTimeout = useRef<number | null>(null);
 
-    // Fetching the prompt from the global context
-    const { prompt, generate, setGenerate } = useContext(Records);
+    const { prompt, generate, temperature, top_k, setGenerate } = useContext(Records);
 
     const startGeneration = useCallback(async () => {
 
+
+        console.log("Beginning generation...")
+
+        // Starting from a clean state
+        
         console.log("Beginning generation...")
 
         // Starting from a clean state
         setGeneratedText('');
         setError(null);
+        currentTextIndex.current = 0;
 
-        try{
+        if(textContainerRef.current){
+           textContainerRef.current.innerHTML = '';
+        }
+        
+        let fullText = prompt + ' ';
+        setGeneratedText(fullText);
+        
+        // Delaying to let the prompt be typed in!
+        const delay = async (ms: number) => new Promise(res => setTimeout(res, ms));
+        await delay(300);
 
-            // Getting our beautiful stream of tokens!
+        try {
             const stream = await LLMService.generateText(model, temperature, top_k, prompt);
             const reader = stream.getReader();
 
-            let fullText = prompt + ' ';
-
-            function read() {
+            const read = () => {
                 
-                // This is what actually is presenting the text in a streamed fashion!
                 reader.read().then(({ done, value }) => {
-
                     if (done) {
-                        
-                        // onTextGenerated will likely show the time taken for generation
                         if (onTextGenerated) onTextGenerated(fullText);
                         return;
                     }
 
                     fullText += value;
-
-                    setGeneratedText(prevText => prevText + value);
-
-                    // Reload the function until we're done!
-                    read();
+                    setGeneratedText(fullText);
+                    
+                    if(generate)
+                        read();
                 });
-            }
-            
-            // Start reading :)
+            };
+
             read();
             setGenerate(false);
         }
 
         catch (error) {
 
-            // Logging the error and updating the error state
             console.error(error);
-            
             setError(error instanceof Error ? error.message : String(error));
             setGenerate(false);
         }
-    }, [generate]);
+    }, [model, onTextGenerated, prompt, setGenerate, temperature, top_k]);
 
 
-    // We start generation once the prompt is generated
-    useEffect (() => {
-
-        console.log("Current prompt", prompt)
-
-        if (prompt !== '' && generate === true){
-            
-            console.log("Entered here!")
-            
-            // Beginning generation now!
+    useEffect(() => {
+        
+        if (prompt !== '' && generate === true) {
             startGeneration();
         }
+        
+    }, [generate, prompt, startGeneration]);
 
-    }, [generate, prompt]);
 
-    // Defining an effect for having our text fade in and out!
     useEffect(() => {
-        
-        console.log("I got called!")
-        
-        if (textContainerRef.current == null) return;
-        
-        const newTextLength = generatedText.length;
-        const fragment = document.createDocumentFragment();
+    
+        if (!textContainerRef.current) return;
 
-        for (let i = previousTextLength.current; i < newTextLength; i++) {
-            
-            // Creating a new span for the nex text
+        // Adding in tokens based on the text container reference
+        const textContainer = textContainerRef.current;
+
+        // Adding all the previous spans to the text container, so that the animation can take place
+        let newText = generatedText.substring(currentTextIndex.current)
+        
+        // Breaking up the text for each character
+        let newTextElements = newText.split('');
+
+        // Going through the tokens and showing it up
+        newTextElements.forEach((char, index) => {
+
+            console.log("index: ", index)
+            console.log("Current text index: ", currentTextIndex.current)
+            console.log("Prompt length: ", prompt.length)
+
+            // Creating the new span
             const span = document.createElement('span');
-            span.textContent = generatedText[i];
-
-            // Adding visual features
-            span.style.opacity = '0';
+            span.textContent = char;
+            span.style.opacity = '0'; // Initial opacity
             span.style.transition = `opacity ${fadeInDuration}ms ease-in`;
-            
-            // Let the prompt be boldened to help differentiation :)
-            if (i < prompt.length) {
-                span.className = 'font-semibold text-gray-700';
+            span.style.fontSize = '2px';
+
+            let temp_typingSpeed = typingSpeed;
+
+            // Boldening the prompts
+            if (currentTextIndex.current + index < prompt.length) { 
+                span.style.fontWeight = '750';
+                temp_typingSpeed *= 1.5;
             }
-              
-            fragment.appendChild(span);
-        }   
 
-        // Adding the new text to the container
-        textContainerRef.current.appendChild(fragment);
+            textContainer.appendChild(span);
 
-        requestAnimationFrame(() => {
-            
-            if (textContainerRef.current == null){
-                return;
-            }
-            
-            const newSpans = Array.from(textContainerRef.current.querySelectorAll('span')) as HTMLSpanElement[];
-            
-            // Having the new spans be faded-in!
-            for (let i = previousTextLength.current; i < newTextLength; i++) {
+            // Setting a timeout to transition into full opacity
+            animationTimeout.current = window.setTimeout(() => {
+                span.style.opacity = '1';
+            }, temp_typingSpeed * index);
+        })
+    
+        currentTextIndex.current = generatedText.length;
 
-                setTimeout(() => {
-                    if (newSpans[i]) {
-                        newSpans[i].style.opacity = '1';
-                    }
-                }, typingSpeed * (i - previousTextLength.current));
-            }
-        });
-
-        // Updating the length
-        previousTextLength.current = newTextLength;
-    }, [generatedText, prompt, fadeInDuration, typingSpeed]);
-
-    useEffect(() => {
-        
+        // This is critical to clear the timeout upon component unmounting.
         return () => {
+            if (animationTimeout.current) {
+                clearTimeout(animationTimeout.current);
+            }
+        };
         
-            if (textContainerRef.current) {
+    }, [generatedText, prompt, typingSpeed, fadeInDuration]);
+
+
+    // Clear the container on new prompt
+    useEffect(() => {
+        return () => {
+            if(textContainerRef.current)
+            {
+                setGenerate(false);
                 textContainerRef.current.innerHTML = '';
             }
-
-            previousTextLength.current = 0;
-        };
+        }
     }, [prompt]);
 
     return (
-        <div className={`relative ${className}`}>
+        <div className={`relative`}>
             <div
+                style={{
+                    minHeight: '300px',
+                    overflowY: 'auto',
+                    padding: '1px 20px 1px 20px',
+                }}
                 ref={textContainerRef}
                 className="whitespace-pre-wrap break-words"
                 aria-live="polite"
                 aria-busy={generate}
             />
-          
             {error && (
                 <div className="mt-4 p-4 bg-red-50 text-red-600 rounded-md">
-                Error: {error}
+                    Error: {error}
                 </div>
             )}
-          
             {generate && (
                 <div className="mt-2 text-sm text-gray-500">
-                Generating...
                 </div>
             )}
-            </div>
-        );
+        </div>
+    );
 };
 
 export default GenerativeBox;

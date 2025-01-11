@@ -1,11 +1,8 @@
 import React, { useContext, ChangeEvent } from 'react';
-import Records from '../contexts/records.tsx'
+import Records from '../contexts/records.tsx';
+import { StyledPrompt, StyledInput, StyledButton } from './components.style.tsx';
 
-interface PromptProps {
-    className?: string;
-}
-
-const Prompt: React.FC<PromptProps> = ({ className = '' }) => {
+const Prompt: React.FC = () => {
 
     // Defining a state for the prompt
     const { prompt, setPrompt, generate, setGenerate } = useContext(Records);
@@ -20,7 +17,7 @@ const Prompt: React.FC<PromptProps> = ({ className = '' }) => {
         if (prompt.trim()) {
 
             // Do not do anything if we are currently generating!
-            if(generate !== true){
+            if(generate === false){
                 setGenerate(true);
             }
         }
@@ -29,22 +26,19 @@ const Prompt: React.FC<PromptProps> = ({ className = '' }) => {
     // Creating our DIV holding the prompt text box and the submission button
     return (
     
-    <div className={`${className}`}>
-        <input 
+    <StyledPrompt>
+        <StyledInput 
             type="text" 
             value={prompt}
             onChange={handleChange}
-            placeholder="What tale will you create?"
-            className="prompt-input"
         />
         
-        <button 
+        <StyledButton 
             onClick={handleSubmit}
-            className="prompt-button"
         >
             Write!
-        </button>
-    </div>
+        </StyledButton>
+    </StyledPrompt>
     );
 };
 

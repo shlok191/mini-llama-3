@@ -84,7 +84,7 @@ async def generate_stream(model: MiniLlamaForCausalLM, temperature: float, top_k
         print(f"An error occured! \n\n{e}")
         
 @app.post("/generation")
-async def vanilla_stream_api(request: Request):
+async def stream_api(request: Request):
     
     try:
         

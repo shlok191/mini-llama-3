@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 176.2 88.6">
+  <!-- Generator: Adobe Illustrator 29.1.0, SVG Export Plug-In . SVG Version: 2.1.0 Build 142)  -->
+  <defs>
+    <style>
+      .st0 {
+        stroke-width: .9px;
+      }
+
+      .st0, .st1 {
+        stroke: #fff;
+      }
+
+      .st2 {
+        fill: #556b2f;
+      }
+
+      .st2, .st3, .st4, .st5, .st6, .st7, .st8, .st9, .st10, .st11, .st12, .st13 {
+        stroke: #000;
+      }
+
+      .st2, .st7, .st11 {
+        stroke-width: 1.5px;
+      }
+
+      .st3, .st4, .st1 {
+        fill: none;
+      }
+
+      .st3, .st1 {
+        stroke-linejoin: round;
+        stroke-width: 2px;
+      }
+
+      .st3, .st1, .st10 {
+        stroke-linecap: round;
+      }
+
+      .st4 {
+        stroke-width: 1px;
+      }
+
+      .st5, .st11, .st12, .st13 {
+        fill: #fff;
+      }
+
+      .st6 {
+        fill: red;
+      }
+
+      .st8 {
+        stroke-width: .6px;
+      }
+
+      .st9, .st10, .st13 {
+        stroke-width: .7px;
+      }
+
+      .st10 {
+        fill: #ff8c00;
+      }
+
+      .st12 {
+        stroke-width: 1.3px;
+      }
+    </style>
+  </defs>
+  <path class="st8" d="M8.9,78.4l69.9-18.8,7.1,5.4,66.9-18c2.7-.7,6.6-1.8,9.2-3.2,6.3-3.2,7.8-11.1,5.4-20.3L5.8,66.8l3.1,11.6h0Z"/>
+  <path class="st2" d="M169.9,33.3c-3.4,6-4.2,7.2-6.5,8.1-2.3.9-7.8,2.4-10.6,3.2l-25.4,6.9-39.2,10.5-11.5-42.9c-2.8-10.4.2-11.3,7-13.1l8.4-2.2c5.4-1.5,11.8-3.2,15.5-2.9,2.6.2,3.2.8,5,1.7l21.6,12.7s28.9-7.2,31,.7l4.7,17.5h0Z"/>
+  <path class="st9" d="M161.5,42.3l-4.2-10.1c-1.4-3.2-5.4-6-9.2-4.9l-12,3.2c-5.5,1.5-7.1,6.2-7.3,10.1v10.4"/>
+  <circle class="st0" cx="145.8" cy="46.2" r="14.3"/>
+  <circle class="st12" cx="145.7" cy="46.2" r="8" transform="translate(-7 39.3) rotate(-15)"/>
+  <path class="st4" d="M154.1,17.8"/>
+  <path class="st4" d="M154.1,17.8"/>
+  <path class="st5" d="M161.9,37.1c.4,1.4,1.2,2.9,2.7,2.6l9.8-2.6c1.4-.4,1.4-2.1,1-3.6l-.6-2.2c-.4-1.4-1.2-2.9-2.7-2.6l-9.8,2.6c-1.4.4-1.4,2.1-1,3.6l.6,2.2Z"/>
+  <path class="st11" d="M89.8,27c-1.4.4-2.9-.5-3.3-1.9l-3.2-12c-.4-1.4.5-2.9,1.9-3.3l27.4-7.3,21.6,12.7-13.4,3.6-31,8.3h0Z"/>
+  <line class="st4" x1="108.4" y1="3.6" x2="120.8" y2="18.7"/>
+  <path class="st10" d="M165.5,16.9l-3.2.8c-.6.2-.8.8-.8,1.5l3.7,7.7c.2.6.8,1,1.5.8l1.6-.4"/>
+  <path class="st13" d="M114,22.1c.3,1.1.7,1.9,1.7,1.6l3.1-.8c1.1-.3,1.2-1.2.9-2.3l-1.5-5.5c-.3-1.1-.9-1.8-2-1.5l-3.1.8c-1.1.3-1,1.2-.7,2.2l1.5,5.5Z"/>
+  <rect class="st7" x="3.8" y="40.1" width="81.5" height="32.8" transform="translate(-13.1 13.4) rotate(-15)"/>
+  <line class="st3" x1="154.8" y1="20.7" x2="88.9" y2="38.4"/>
+  <line class="st1" x1="75.9" y1="41.9" x2="8.7" y2="59.9"/>
+  <path class="st9" d="M58.7,69.9l-4.2-10.1c-1.4-3.2-5.4-6-9.2-4.9l-12,3.2c-5.5,1.5-7.1,6.2-7.3,10.1v10.4"/>
+  <circle class="st0" cx="42.8" cy="73.9" r="14.3"/>
+  <circle class="st12" cx="42.8" cy="73.9" r="8"/>
+  <path class="st6" d="M4.3,79.3c.4,1.4,1.2,2.9,2.7,2.6l5.2-1.4c1.4-.4,1.4-2.1,1-3.6l-.6-2.2c-.4-1.4-1.2-2.9-2.7-2.6l-5.2,1.4c-1.4.4-1.4,2.1-1,3.6l.6,2.2Z"/>
+</svg>
