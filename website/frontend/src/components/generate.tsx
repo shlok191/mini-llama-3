@@ -81,7 +81,7 @@ const GenerativeBox: React.FC<GenerativeBoxProps> = ({
             setError(error instanceof Error ? error.message : String(error));
             setGenerate(false);
         }
-    }, [model, onTextGenerated, prompt, setGenerate, temperature, top_k]);
+    }, [model, onTextGenerated, prompt, setGenerate, temperature, top_k, generate]);
 
 
     useEffect(() => {
@@ -118,7 +118,7 @@ const GenerativeBox: React.FC<GenerativeBoxProps> = ({
             span.textContent = char;
             span.style.opacity = '0'; // Initial opacity
             span.style.transition = `opacity ${fadeInDuration}ms ease-in`;
-            span.style.fontSize = '2px';
+            span.style.fontSize = '20px';
 
             let temp_typingSpeed = typingSpeed;
 
@@ -163,7 +163,7 @@ const GenerativeBox: React.FC<GenerativeBoxProps> = ({
         <div className={`relative`}>
             <div
                 style={{
-                    minHeight: '300px',
+                    minHeight: '200px',
                     overflowY: 'auto',
                     padding: '1px 20px 1px 20px',
                 }}

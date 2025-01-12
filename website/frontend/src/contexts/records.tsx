@@ -7,7 +7,7 @@ const pirateImages = [
 ];
 
 const vanillaImages = [
-  'teddy-bear.svg', 'origami.svg', 'table-tennis.svg', 'controller.svg',
+  'controller.svg', 'origami.svg', 'table-tennis.svg', 'teddy-bear.svg', 
   'tennis-ball.svg', 'toy-truck.svg', 'rubiks-cube.svg', 'slingshot.svg', 'lego-man.svg'
 ];
 
@@ -40,7 +40,7 @@ const Records = React.createContext<RecordsContext>({
   generate: false,
   temperature: 0.75,
   top_k: 8,
-  theme: false,
+  theme: true,
   selectedImages: [],
   music: null,
 
@@ -60,7 +60,7 @@ export const RecordsProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [generate, setGenerate] = useState(false);
   const [temperature, setTemperature] = useState(0.75);
   const [top_k, setTopK] = useState(8);
-  const [theme, setTheme] = useState(false);
+  const [theme, setTheme] = useState(true);
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [music, setMusic] = useState<HTMLAudioElement | null>(null);
 

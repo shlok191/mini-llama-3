@@ -5,7 +5,7 @@
     --button-text-color: #2c3e50;
     --title-font-family: 'Patrick Hand', cursive;
     --font-family: 'Patrick Hand', cursive;
-    --serious-font-family: 'Nunito', sans-serif;
+    --serious-font-family: 'Patrick Hand', cursive;
     --card-background: #ffffff;
     --pillar-background: #F2EFEB;
     --common-text-color: #2c3e50;
@@ -27,8 +27,9 @@
     --button-text-color: #fff;
     --title-font-family: 'Pirata One', cursive;
     --font-family: 'IM Fell English SC', serif;
+    --serious-font-family: 'Patrick Hand', cursive;
     --pillar-background: #4A301F;
-    --card-background: #654321;
+    --card-background: #D2B48C;
     --common-text-color: #ffffff;
     --prompt-box-color: #333333;
 

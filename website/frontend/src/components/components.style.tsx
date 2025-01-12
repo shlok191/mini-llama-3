@@ -120,7 +120,7 @@ export const Pillar = styled.div`
     background-color: var(--pillar-background);
     padding: 0.2rem;
     top: 0;
-    position: relative;
+    position: sticky;
     display: flex;
     flex-direction: column; 
     justify-content: flex-start;

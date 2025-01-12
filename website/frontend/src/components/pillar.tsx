@@ -12,10 +12,10 @@ const customSizes = {
     'ship.svg': { width: '100px', height: '100px' },
     'tequila.svg': { width: '60px', height: '90px' },
     'money-bag.svg': { width: '100px', height: '100px' },
-    'teddy-bear.svg': { width: '125px', height: '125px' },
+    'teddy-bear.svg': { width: '115px', height: '115px' },
     'origami.svg': { width: '100px', height: '100px' },
     'table-tennis.svg': { width: '85px', height: '85px' },
-    'controller.svg': { width: '100px', height: '100px' },
+    'controller.svg': { width: '125px', height: '125px' },
     'tennis-ball.svg': { width: '70px', height: '70px' },
     'toy-truck.svg': { width: '110px', height: '110px' },
     'slingshot.svg': { width: '80px', height: '80px' },
@@ -48,16 +48,16 @@ export const LeftPillar = () => {
     ];
 
     const positionsOneImageVanilla = [
-        { top: '3%', left: '22%' }, // Centered
-        { top: '39%', left: '23.5%' }, // Centered
+        { top: '5%', left: '20%' }, // Centered
+        { top: '35%', left: '18%' }, // Centered
         { top: '67%', left: '23%' }, // Centered
     ];
 
     const positionsTwoImagesVanilla = [
         
         // One on the left, and one on the right!
-        { top: '23%', left: '-3%' },
-        { top: '23%', left: '50%' },
+        { top: '21%', left: '0%' },
+        { top: '21%', left: '50%' },
 
         { top: '53%', left: '3%' },
         { top: '53.5%', left: '47%' },
@@ -128,16 +128,16 @@ export const RightPillar = () => {
     ];
 
     const positionsOneImageVanilla = [
-        { top: '3%', left: '27%' }, // Centered
-        { top: '39%', left: '28.5%' }, // Centered
+        { top: '5%', left: '27%' }, // Centered
+        { top: '36%', left: '28.5%' }, // Centered
         { top: '67%', left: '28%' }, // Centered
     ];
 
     const positionsTwoImagesVanilla = [
         
         // One on the left, and one on the right!
-        { top: '23%', left: '2%' },
-        { top: '23%', left: '55%' },
+        { top: '21%', left: '5%' },
+        { top: '21%', left: '55%' },
 
         { top: '53%', left: '8%' },
         { top: '53.5%', left: '52%' },
