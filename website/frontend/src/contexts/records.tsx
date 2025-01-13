@@ -58,8 +58,8 @@ export const RecordsProvider: React.FC<{ children: React.ReactNode }> = ({ child
   
   const [prompt, setPrompt] = useState('');
   const [generate, setGenerate] = useState(false);
-  const [temperature, setTemperature] = useState(0.75);
-  const [top_k, setTopK] = useState(8);
+  const [temperature, setTemperature] = useState(0.05);
+  const [top_k, setTopK] = useState(1);
   const [theme, setTheme] = useState(true);
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [music, setMusic] = useState<HTMLAudioElement | null>(null);
