@@ -65,7 +65,7 @@ const WebPage: React.FC = () => {
                     
                     {/* GenerativeBox component */}
                     <StyledTextDivider>
-                        <span style={{fontSize: '22px', fontWeight: 'bolder'}}>Generated Text</span>
+                        <span style={{fontSize: '26px', fontWeight: 'bolder'}}>Generated Text</span>
                     </StyledTextDivider>
                     
                     <GenerativeBox
@@ -77,27 +77,27 @@ const WebPage: React.FC = () => {
 
                     {/* Project Description */}
                     <StyledTextDivider>
-                        <span style={{fontSize: '22px', fontWeight: 'bolder'}}>Project Description</span>
+                        <span style={{fontSize: '26px', fontWeight: 'bolder'}}>Project Description</span>
                     </StyledTextDivider>
                     <Header />
 
                     {/* Model Details */}
                     <StyledTextDivider>
-                        <span style={{fontSize: '22px', fontWeight: '900'}}>Model Implementation</span>
+                        <span style={{fontSize: '26px', fontWeight: '900'}}>Model Implementation</span>
                     </StyledTextDivider>
                     
                     <CurrentDetails />
                     
                     {/* Training Details */}
                     <StyledTextDivider>
-                        <span style={{fontSize: '22px', fontWeight: '900'}}>Training Implementation</span>
+                        <span style={{fontSize: '26px', fontWeight: '900'}}>Training Implementation</span>
                     </StyledTextDivider>
 
                     <TrainingDetails />
 
                     {/* Credits & Links */}
                     <StyledTextDivider>
-                        <span style={{fontSize: '22px', fontWeight: '900'}}>Credits & Links</span>
+                        <span style={{fontSize: '26px', fontWeight: '900'}}>Credits & Links</span>
                     </StyledTextDivider>
                     
                     <Credits />

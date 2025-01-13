@@ -1,5 +1,5 @@
 // Points to the Azure VM open port
-const SERVER_URL = "http://20.94.238.87:2000";
+const SERVER_URL = "https://blackbeard-shanty.com:2000";
 
 const LLMService = {
   

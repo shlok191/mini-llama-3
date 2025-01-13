@@ -74,7 +74,11 @@ export const ToggleLabel = styled.span`
     margin-right: 25px;
     color: #black;
     font-size: 20px;
-`
+    display: flex; /* Added */
+    flex-direction: column; /* Added */
+    align-items: center; /* Added */
+    justify-content: center; /*Added*/
+   `
 
 export const ToggleSwitchInput = styled.input`
     opacity: 0;
@@ -82,7 +86,7 @@ export const ToggleSwitchInput = styled.input`
     height: 0;
 
     &:checked + span {
-        background-color: var(--primary-color);
+        background-color: var(--secondary-color);
     }
     
     &:checked + span:before {
@@ -167,6 +171,16 @@ export const StyledInputRange = styled.input`
       cursor: pointer;
       border-radius: 50%;
     }
+
+    &::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 0.75rem;
+        height: 0.75rem;
+        background: var(--prompt-box-color);
+        cursor: pointer;
+        border-radius: 150%;
+        border: 0.75px solid var(--common-text-color);
+    }
 `;
 
 export const StyledLabel = styled.label`
@@ -187,7 +201,7 @@ export const StyledSuggestionContainer = styled.div`
 
 export const StyledSuggestionBubble = styled.div`
     background-color: var(--secondary-color);
-    color: var(--common-text-color);
+    color: var(--bubble-text-color);
     border: 1px solid var(--common-text-color);
     padding: 0.5rem 0.8rem;
     border-radius: 1rem;

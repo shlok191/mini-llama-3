@@ -9,13 +9,18 @@ from fastapi.responses import JSONResponse, StreamingResponse
 import asyncio
 
 from typing import List
+import ssl
+
+ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+ssl_context.load_cert_chain("/app/cert.pem", keyfile='/app/key.pem')
 
 # Defining the FastAPI app
 app = FastAPI()
 
 origins = [
-    "http://localhost",
-    "http://20.94.238.87:3000",
+    "https://blackbeard-shanty.com",
+    "https://www.blackbeard-shanty.com",
+    "https://20.51.124.49:3000"
 ]
 
 app.add_middleware(

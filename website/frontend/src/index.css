@@ -10,7 +10,13 @@
     --pillar-background: #F2EFEB;
     --common-text-color: #2c3e50;
     --prompt-box-color: #F2EFEB;
-    
+    --bubble-text-color: #2c3e50;
+
+    --link-color: #4481ba;
+    --link-visited-color: #576574;
+    --link-hover-color: #0b4c88;
+    --link-active-color: #4A5764;
+
     transition: 
         --primary-color var(--transition-duration) ease,
         --secondary-color var(--transition-duration) ease,
@@ -22,16 +28,22 @@
   
 .pirate-ui {
     --primary-color: #333333;
-    --secondary-color: #4A301F; 
+    --secondary-color: #D2B48C; 
     --button-color: #333333;
-    --button-text-color: #fff;
+    --button-text-color: #ffffff;
     --title-font-family: 'Pirata One', cursive;
     --font-family: 'IM Fell English SC', serif;
     --serious-font-family: 'Patrick Hand', cursive;
-    --pillar-background: #4A301F;
-    --card-background: #D2B48C;
-    --common-text-color: #ffffff;
+    --pillar-background: #D2B48C;
+    --card-background: #4A301F;
+    --common-text-color: #FFFFFF;
     --prompt-box-color: #333333;
+    --bubble-text-color: #ffffff;
+
+    --link-color: #D2B48C;
+    --link-visited-color: #CCCCCC;
+    --link-hover-color: #FFFFFF;
+    --link-active-color: #87CEFA;
 
     transition:
         --primary-color var(--transition-duration) ease,
@@ -75,4 +87,26 @@ body {
     flex-direction: column;
     align-items: flex-start;
     width: 100%;
+}
+
+
+a {
+    color: var(--link-color);
+    transition: color var(--transition-duration) ease;
+}
+
+a:visited {
+    color: var(--link-visited-color) !important;
+}
+
+a:active {
+    color: var(--link-active-color) !important;
+}
+
+a:hover {
+    color: var(--link-hover-color) !important;
+}
+
+b {
+    font-weight: bolder;
 }

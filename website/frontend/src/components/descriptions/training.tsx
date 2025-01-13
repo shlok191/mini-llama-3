@@ -2,7 +2,7 @@ import React from 'react';
 
 const TrainingDetails: React.FC = () => {
     return (
-        <div style={{ padding: '0px 50px 0px 50px', fontFamily: 'var(--serious-font-family)'}} id="training-details">
+        <div style={{ padding: '0px 50px 0px 50px', fontFamily: 'var(--serious-font-family)', fontSize: '18px'}} id="training-details">
             <p>
                 I trained my model using <b>PyTorch Lightning</b> for LR scheduling and checkpointing. I also used <b>Weights & Biases</b> for monitoring!
             </p>
@@ -21,19 +21,19 @@ const TrainingDetails: React.FC = () => {
            <div style={{display: 'flex'}}>
                 <div style={{marginLeft: '40px'}}>
 
-                    <h3 style={{paddingLeft: "75px"}}>TinyStories Dataset Training</h3>
+                    <h3 style={{paddingLeft: "60px"}}>TinyStories Dataset Training</h3>
                     <img src="/assets/vanilla-validation-loss.png" alt = "Weights & Biases Graph" width='350px' height='250px'/>
                 </div>
                 
                  <div style={{marginLeft: '120px'}}>
                 
-                     <h3 style={{paddingLeft: "90px"}}>Pirate Dataset Finetuning</h3>
+                     <h3 style={{paddingLeft: "70px"}}>Pirate Dataset Finetuning</h3>
                      <img src="/assets/pirate-validation-loss.png" alt = "Weights & Biases Graph" width='350px' height='250px'/>
                 
                  </div>
              </div>
-             <p>
-                During training, it was very exciting to watch the model learning language structure, punctuation and other details as time went on :)
+             <p><br />
+                During training, it was especially exciting to watch the model learn language structure, punctuation and other details :)
             </p>
         </div>
     );

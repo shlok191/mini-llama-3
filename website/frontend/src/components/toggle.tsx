@@ -14,7 +14,16 @@ const ToggleSwitch: React.FC = () => {
         <ToggleSwitchContainer>
             <ToggleLabel>
                 {theme ? "Switch to Vanilla!" : "Arrr, Switch to Pirate!"}
+                <span style={{
+                   display: 'block',
+                   fontSize: '1.0rem',
+                   marginTop: '0.2rem',
+                   color: 'var(--common-text-color)'
+                  }}>
+                    (Different Model)
+                  </span>
             </ToggleLabel>
+            
             <ToggleSwitchBox>
                 <ToggleSwitchInput
                     type="checkbox"

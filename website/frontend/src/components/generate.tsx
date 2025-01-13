@@ -28,14 +28,9 @@ const GenerativeBox: React.FC<GenerativeBoxProps> = ({
 
     const startGeneration = useCallback(async () => {
 
-
+        // Starting from a clean state
         console.log("Beginning generation...")
 
-        // Starting from a clean state
-        
-        console.log("Beginning generation...")
-
-        // Starting from a clean state
         setGeneratedText('');
         setError(null);
         currentTextIndex.current = 0;
@@ -76,7 +71,8 @@ const GenerativeBox: React.FC<GenerativeBoxProps> = ({
         }
 
         catch (error) {
-
+            
+            console.log("An error occured!!")
             console.error(error);
             setError(error instanceof Error ? error.message : String(error));
             setGenerate(false);
@@ -108,10 +104,6 @@ const GenerativeBox: React.FC<GenerativeBoxProps> = ({
 
         // Going through the tokens and showing it up
         newTextElements.forEach((char, index) => {
-
-            console.log("index: ", index)
-            console.log("Current text index: ", currentTextIndex.current)
-            console.log("Prompt length: ", prompt.length)
 
             // Creating the new span
             const span = document.createElement('span');

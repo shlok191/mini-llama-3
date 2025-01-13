@@ -18,6 +18,13 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 
 RUN pip install setuptools-rust torch uvicorn
 
+# Copying over the SSL certificates
+COPY fullchain1.pem /app/cert.pem
+COPY privkey1.pem /app/key.pem
+
+RUN chmod 644 /app/cert.pem
+RUN chmod 600 /app/key.pem
+
 COPY model /app/model
 WORKDIR /app/model
 RUN pip install -e .
@@ -36,4 +43,5 @@ ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
 # Run uvicorn when the container launches
-CMD ["uvicorn", "stream_generation:app", "--host", "0.0.0.0", "--port", "2000"]
+CMD ["uvicorn", "stream_generation:app", "--host", "0.0.0.0", "--port", "2000", \ 
+"--ssl-keyfile", "/app/key.pem", "--ssl-certfile", "/app/cert.pem"]
