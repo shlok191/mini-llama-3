@@ -1,5 +1,3 @@
-import styled from 'styled-components';
-
 import React, { useContext } from 'react';
 import Records from '../contexts/records.tsx';
 import { StyledSliderContainer, StyledSlider, StyledInputRange, StyledLabel } from './components.style.tsx';
@@ -27,7 +25,7 @@ const Sliders: React.FC<SlidersProps> = ({ className = '' }) => {
                     id="temperatureSlider"
                     type="range"
                     min="0.05"
-                    max="1"
+                    max="2"
                     step="0.05"
                     value={temperature}
                     onChange={handleTemperatureChange}

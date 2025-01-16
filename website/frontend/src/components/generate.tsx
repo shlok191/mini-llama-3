@@ -21,72 +21,141 @@ const GenerativeBox: React.FC<GenerativeBoxProps> = ({
     const [error, setError] = useState<string | null>(null);
 
     const textContainerRef = useRef<HTMLDivElement>(null);
-    const currentTextIndex = useRef(0); // Keep track of processed chars index
+    const currentTextIndex = useRef(0); 
     const animationTimeout = useRef<number | null>(null);
+
+    // Help with cancelling the streaming if need be!
+    const abortControllerRef = useRef<AbortController | null>(null);
+    const streamReaderRef = useRef<ReadableStreamDefaultReader<any> | null>(null);
 
     const { prompt, generate, temperature, top_k, setGenerate } = useContext(Records);
 
+    // Function to cleanup ongoing stream and animations
+    const cleanup = useCallback(() => {
+
+        console.log("Beginning cleanup...")
+
+        // Aborting any ongoing fetch request
+        if (abortControllerRef.current) {
+
+            abortControllerRef.current.abort();
+            abortControllerRef.current = null;
+        }
+
+        // Releasing the reader if it exists
+        if (streamReaderRef.current) {
+
+            streamReaderRef.current.cancel();
+            streamReaderRef.current = null;
+        }
+
+        // Clearing any pending animation timeouts
+        if (animationTimeout.current) {
+            clearTimeout(animationTimeout.current);
+            animationTimeout.current = null;
+        }
+
+    }, []);
+    
     const startGeneration = useCallback(async () => {
-
-        // Starting from a clean state
-        console.log("Beginning generation...")
-
+        console.log("Beginning generation...");
+        
+        // Create new abort controller
+        abortControllerRef.current = new AbortController();
+    
         setGeneratedText('');
         setError(null);
         currentTextIndex.current = 0;
-
-        if(textContainerRef.current){
-           textContainerRef.current.innerHTML = '';
+    
+        if(textContainerRef.current) {
+            textContainerRef.current.innerHTML = '';
         }
         
         let fullText = prompt + ' ';
         setGeneratedText(fullText);
         
-        // Delaying to let the prompt be typed in!
         const delay = async (ms: number) => new Promise(res => setTimeout(res, ms));
         await delay(300);
 
         try {
-            const stream = await LLMService.generateText(model, temperature, top_k, prompt);
+            const stream = await LLMService.generateText(
+                model, 
+                temperature, 
+                top_k, 
+                prompt,
+                abortControllerRef.current.signal
+            );
+            
             const reader = stream.getReader();
+            streamReaderRef.current = reader;
 
-            const read = () => {
-                
-                reader.read().then(({ done, value }) => {
+            const read = async () => {
+
+                try {
+
+                    // Check if we should stop reading
+                    if (abortControllerRef.current?.signal.aborted) {
+                        console.log("signal was cut!")
+                        return;
+                    }
+    
+                    const { done, value } = await reader.read();
+
                     if (done) {
-                        if (onTextGenerated) onTextGenerated(fullText);
+
+                        console.log("Done was called!");
+                        setGenerate(false);
+
+                        if (onTextGenerated)
+                            onTextGenerated(fullText);
+
+                        streamReaderRef.current = null;
                         return;
                     }
 
                     fullText += value;
                     setGeneratedText(fullText);
                     
-                    if(generate)
+                    // Only continue reading if we haven't been aborted
+                    if (!abortControllerRef.current?.signal.aborted) {
                         read();
-                });
+                    }
+
+                } catch (error) {
+                    
+                    if (error.name === 'AbortError') {
+                        console.log('Stream was aborted');
+                    } 
+                    
+                    else {
+                        console.error('Stream error:', error);
+                        setError(error instanceof Error ? error.message : String(error));
+                    }
+
+                    setGenerate(false);
+                }
             };
-
+    
             read();
-            setGenerate(false);
-        }
-
-        catch (error) {
             
-            console.log("An error occured!!")
-            console.error(error);
-            setError(error instanceof Error ? error.message : String(error));
+        } catch (error) {
+
+            console.error("An error occurred:", error);
             setGenerate(false);
         }
-    }, [model, onTextGenerated, prompt, setGenerate, temperature, top_k, generate]);
-
+    }, [model, onTextGenerated, prompt, setGenerate, temperature, top_k]);
 
     useEffect(() => {
-        
+
         if (prompt !== '' && generate === true) {
+
+            console.log("Calling cleanup + startGeneration effect")
+
             startGeneration();
+            return () => cleanup();
         }
-        
-    }, [generate, prompt, startGeneration]);
+
+    }, [generate, prompt, startGeneration, cleanup]);
 
 
     useEffect(() => {
@@ -142,14 +211,16 @@ const GenerativeBox: React.FC<GenerativeBoxProps> = ({
 
     // Clear the container on new prompt
     useEffect(() => {
-        return () => {
-            if(textContainerRef.current)
-            {
-                setGenerate(false);
-                textContainerRef.current.innerHTML = '';
-            }
+
+        console.log("Calling the last useEffect!")
+        
+        if(textContainerRef.current)
+        {
+            setGenerate(false);
+            textContainerRef.current.innerHTML = '';
         }
-    }, [prompt]);
+
+    }, [prompt, cleanup]);
 
     return (
         <div className={`relative`}>

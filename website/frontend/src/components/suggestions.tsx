@@ -12,7 +12,7 @@ const SuggestionBubbles: React.FC = () => {
     [
         "Once upon a time, in the",
         "The old house in the forest was ",
-        "The pirate sailed in a",
+        "The pirate was playing with his mates, ",
     ] : 
     [
         "Once upon a time, there was ",

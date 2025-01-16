@@ -4,10 +4,12 @@ import Records from '../contexts/records.tsx';
 
 const ToggleSwitch: React.FC = () => {
     
-    const { theme, setTheme } = useContext(Records);
+    const { theme, setTheme, setGenerate, setPrompt } = useContext(Records);
 
     const handleToggle = () => {
+        
         setTheme(prevTheme => !prevTheme);
+        setPrompt('');
     };
 
     return (

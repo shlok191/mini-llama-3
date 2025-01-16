@@ -7,7 +7,7 @@ const Prompt: React.FC = () => {
     // Defining a state for the prompt
     const { prompt, setPrompt, generate, setGenerate } = useContext(Records);
     
-    const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const handleChange = (event: ChangeEvent<HTMLInputElement>) => {        
         setPrompt(event.target.value);
     };
 
