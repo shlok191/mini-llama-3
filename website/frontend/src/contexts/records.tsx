@@ -38,8 +38,8 @@ const Records = React.createContext<RecordsContext>({
 
   prompt: '',
   generate: false,
-  temperature: 0.75,
-  top_k: 8,
+  temperature: 0.25,
+  top_k: 2,
   theme: true,
   selectedImages: [],
   music: null,
@@ -58,8 +58,8 @@ export const RecordsProvider: React.FC<{ children: React.ReactNode }> = ({ child
   
   const [prompt, setPrompt] = useState('');
   const [generate, setGenerate] = useState(false);
-  const [temperature, setTemperature] = useState(0.75);
-  const [top_k, setTopK] = useState(32);
+  const [temperature, setTemperature] = useState(0.25);
+  const [top_k, setTopK] = useState(2);
   const [theme, setTheme] = useState(true);
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
   const [music, setMusic] = useState<HTMLAudioElement | null>(null);

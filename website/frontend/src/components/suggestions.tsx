@@ -10,13 +10,13 @@ const SuggestionBubbles: React.FC = () => {
     // Defining some suggestions for the user! :)
     const suggestions = theme ? 
     [
-        "Once upon a time, in the",
-        "The old house in the forest was ",
+        "Once upon a time, in the ",
+        "The pirate and his friend Parrot ",
         "The pirate was playing with his mates, ",
     ] : 
     [
         "Once upon a time, there was ",
-        "Inside the big forest, the ",
+        "The old house in the forest was ",
         "Jake was playing with his friends, "
     ];
 

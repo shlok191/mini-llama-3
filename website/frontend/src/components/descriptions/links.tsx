@@ -7,8 +7,8 @@ const Links: React.FC = () => {
             <ul>
                 <li>Link to the GitHub repository: <a href="https://github.com/shlok191/mini-llama-3">Mini Llama 3 Project</a></li>
                 <li>Link to attention implementation: <a href="https://github.com/shlok191/mini-llama-3/blob/main/model/cuda/attention/attention.cu">Attention.cu file</a></li>
-                <li>Link to the Linear layer GEMM implementation: <a href="https://github.com/shlok191/mini-llama-3/blob/main/model/cuda/linear/linear.cu">Linear GEMM implementation</a></li>
-                <li>Link to the Rust Tokenizer: <a href="https://github.com/shlok191/mini-llama-3/blob/main/model/src/tokenizers/rust_tokenizer/src/lib.rs">Rust tokenizer code</a></li>
+                <li>Link to the Linear layer GEMM implementation: <a href="https://github.com/shlok191/mini-llama-3/blob/main/model/cuda/linear/linear.cu">Linear.cu file</a></li>
+                <li>Link to the Rust Tokenizer: <a href="https://github.com/shlok191/mini-llama-3/blob/main/model/src/tokenizers/rust_tokenizer/src/lib.rs">Lib.rs file</a></li>
             </ul>
         </div>
     );

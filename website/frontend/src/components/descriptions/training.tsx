@@ -33,7 +33,7 @@ const TrainingDetails: React.FC = () => {
                  </div>
              </div>
              <p><br />
-                During training, it was especially exciting to watch the model learn language structure, punctuation and other such details :)
+                During training, it was especially exciting to watch the model learn language structure, punctuations and other such details :)
             </p>
         </div>
     );

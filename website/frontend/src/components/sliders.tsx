@@ -25,7 +25,7 @@ const Sliders: React.FC<SlidersProps> = ({ className = '' }) => {
                     id="temperatureSlider"
                     type="range"
                     min="0.05"
-                    max="2"
+                    max="1"
                     step="0.05"
                     value={temperature}
                     onChange={handleTemperatureChange}
@@ -40,7 +40,7 @@ const Sliders: React.FC<SlidersProps> = ({ className = '' }) => {
                     id="topKSlider"
                     type="range"
                     min="1"
-                    max="96"
+                    max="32"
                     value={top_k}
                     onChange={handleTopKChange}
                 />
